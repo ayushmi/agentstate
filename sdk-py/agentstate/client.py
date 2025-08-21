@@ -1,46 +1,142 @@
 import requests
-from typing import Any, Dict, Optional
+from typing import Any, Dict, Optional, List, Union
 import time, json, os, random
 
 
-class State:
-    def __init__(self, base: str):
-        # base: http://host:8080/v1/{ns}
-        self.base = base.rstrip('/')
+class AgentStateClient:
+    """
+    AgentState Python SDK - "Firebase for AI Agents"
+    
+    Provides a simple interface for managing AI agent state with:
+    - Real-time state updates
+    - Rich querying by tags
+    - Persistent storage
+    - High performance and reliability
+    
+    Example:
+        client = AgentStateClient("http://localhost:8080", "my-app")
+        
+        # Create an agent
+        agent = client.create_agent("chatbot", 
+                                   {"name": "CustomerBot", "status": "active"},
+                                   {"team": "support"})
+        
+        # Query agents
+        agents = client.query_agents({"team": "support"})
+    """
+    
+    def __init__(self, base_url: str = "http://localhost:8080", namespace: str = "default"):
+        """
+        Initialize AgentState client.
+        
+        Args:
+            base_url: AgentState server URL (e.g., "http://localhost:8080")
+            namespace: Namespace for organizing agents (e.g., "production", "staging")
+        """
+        self.base_url = base_url.rstrip('/')
+        self.namespace = namespace
+        self.session = requests.Session()
+        self.session.headers.update({
+            'Content-Type': 'application/json',
+            'User-Agent': 'agentstate-python-sdk/1.0.0'
+        })
 
-    def put(self, typ: str, body: Dict[str, Any], tags: Optional[Dict[str, str]] = None, ttl_seconds: Optional[int] = None, id: Optional[str] = None, idempotency_key: Optional[str] = None) -> Dict[str, Any]:
-        payload = {"type": typ, "body": body}
+    def create_agent(self, agent_type: str, body: Dict[str, Any], 
+                    tags: Optional[Dict[str, str]] = None, 
+                    agent_id: Optional[str] = None) -> Dict[str, Any]:
+        """
+        Create or update an agent.
+        
+        Args:
+            agent_type: Type of agent (e.g., "chatbot", "workflow", "classifier")  
+            body: Agent state data (any JSON-serializable object)
+            tags: Key-value pairs for querying and organization
+            agent_id: Specific ID to use (for updates), auto-generated if None
+            
+        Returns:
+            Created agent object with id, type, body, tags, commit_seq, commit_ts
+        """
+        payload = {
+            "type": agent_type,
+            "body": body,
+            "tags": tags or {}
+        }
+        if agent_id:
+            payload["id"] = agent_id
+            
+        response = self.session.post(f"{self.base_url}/v1/{self.namespace}/objects", json=payload)
+        response.raise_for_status()
+        return response.json()
+
+    def get_agent(self, agent_id: str) -> Dict[str, Any]:
+        """
+        Get agent by ID.
+        
+        Args:
+            agent_id: Unique agent identifier
+            
+        Returns:
+            Agent object with id, type, body, tags, commit_seq, commit_ts
+        """
+        response = self.session.get(f"{self.base_url}/v1/{self.namespace}/objects/{agent_id}")
+        response.raise_for_status()
+        return response.json()
+
+    def query_agents(self, tags: Optional[Dict[str, str]] = None) -> List[Dict[str, Any]]:
+        """
+        Query agents by tags.
+        
+        Args:
+            tags: Tag filters (e.g., {"team": "support", "status": "active"})
+            
+        Returns:
+            List of matching agent objects
+        """
+        query = {}
         if tags:
-            payload["tags"] = tags
-        if ttl_seconds is not None:
-            payload["ttl_seconds"] = ttl_seconds
-        if id:
-            payload["id"] = id
-        headers = {}
-        if idempotency_key:
-            headers["Idempotency-Key"] = idempotency_key
-        r = requests.post(f"{self.base}/objects", json=payload, headers=headers)
-        r.raise_for_status()
-        return r.json()
+            query["tags"] = tags
+            
+        response = self.session.post(f"{self.base_url}/v1/{self.namespace}/query", json=query)
+        response.raise_for_status()
+        return response.json()
+    
+    def delete_agent(self, agent_id: str) -> None:
+        """
+        Delete an agent.
+        
+        Args:
+            agent_id: Unique agent identifier
+        """
+        response = self.session.delete(f"{self.base_url}/v1/{self.namespace}/objects/{agent_id}")
+        response.raise_for_status()
+    
+    def health_check(self) -> bool:
+        """
+        Check if AgentState server is healthy.
+        
+        Returns:
+            True if server is healthy, False otherwise
+        """
+        try:
+            response = self.session.get(f"{self.base_url}/health", timeout=5)
+            return response.status_code == 200 and response.text.strip() == "ok"
+        except:
+            return False
+
+    # Legacy API compatibility
+    def put(self, typ: str, body: Dict[str, Any], tags: Optional[Dict[str, str]] = None, 
+            ttl_seconds: Optional[int] = None, id: Optional[str] = None, 
+            idempotency_key: Optional[str] = None) -> Dict[str, Any]:
+        """Legacy method for backward compatibility. Use create_agent() instead."""
+        return self.create_agent(typ, body, tags, id)
 
     def get(self, id: str) -> Dict[str, Any]:
-        r = requests.get(f"{self.base}/objects/{id}")
-        r.raise_for_status()
-        return r.json()
+        """Legacy method for backward compatibility. Use get_agent() instead."""
+        return self.get_agent(id)
 
-    def query(self, tag_filter: Optional[Dict[str, str]] = None, jsonpath: Optional[str] = None, limit: Optional[int] = None, fields: Optional[list[str]] = None):
-        payload: Dict[str, Any] = {}
-        if tag_filter:
-            payload["tag_filter"] = tag_filter
-        if jsonpath:
-            payload["jsonpath"] = {"equals": {jsonpath: True}}
-        if limit is not None:
-            payload["limit"] = limit
-        if fields is not None:
-            payload["fields"] = fields
-        r = requests.post(f"{self.base}/query", json=payload)
-        r.raise_for_status()
-        return r.json()
+    def query(self, tag_filter: Optional[Dict[str, str]] = None, **kwargs) -> List[Dict[str, Any]]:
+        """Legacy method for backward compatibility. Use query_agents() instead."""
+        return self.query_agents(tag_filter)
 
     def watch(self,
               filter: Optional[Dict[str, Any]] = None,

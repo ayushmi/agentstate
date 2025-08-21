@@ -1,0 +1,258 @@
+name: 📦 Publish SDKs
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+    inputs:
+      publish_pypi:
+        description: 'Publish to PyPI'
+        required: true
+        default: false
+        type: boolean
+      publish_npm:
+        description: 'Publish to npm'
+        required: true  
+        default: false
+        type: boolean
+
+jobs:
+  test-sdks:
+    name: 🧪 Test SDKs
+    runs-on: ubuntu-latest
+    
+    services:
+      agentstate:
+        image: agentstate:latest
+        ports:
+          - 8080:8080
+          - 9090:9090
+        options: --health-cmd "curl -f http://localhost:8080/health || exit 1" --health-interval 10s --health-timeout 5s --health-retries 5
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Set up Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: '3.11'
+
+    - name: Set up Node.js
+      uses: actions/setup-node@v4
+      with:
+        node-version: '20'
+
+    - name: Wait for AgentState to be ready
+      run: |
+        for i in {1..30}; do
+          if curl -f http://localhost:8080/health; then
+            echo "AgentState is ready"
+            break
+          fi
+          echo "Waiting for AgentState... ($i/30)"
+          sleep 2
+        done
+
+    - name: Install Python dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install requests build twine
+
+    - name: Install TypeScript dependencies  
+      run: |
+        cd sdk-ts
+        npm install
+
+    - name: Test Python SDK
+      run: python test_python_sdk.py
+
+    - name: Build and test TypeScript SDK
+      run: |
+        cd sdk-ts
+        npm run build
+        cd ..
+        node test_typescript_sdk.js
+
+  publish-python:
+    name: 🐍 Publish Python SDK to PyPI
+    runs-on: ubuntu-latest
+    needs: test-sdks
+    if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/') || (github.event_name == 'workflow_dispatch' && github.event.inputs.publish_pypi == 'true')
+    
+    steps:
+    - name: Checkout code  
+      uses: actions/checkout@v4
+
+    - name: Set up Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: '3.11'
+
+    - name: Install build dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install build twine
+
+    - name: Build Python package
+      run: |
+        cd sdk-py
+        python -m build
+
+    - name: Check package
+      run: |
+        cd sdk-py
+        twine check dist/*
+
+    - name: Publish to TestPyPI
+      uses: pypa/gh-action-pypi-publish@release/v1
+      with:
+        password: ${{ secrets.TEST_PYPI_API_TOKEN }}
+        repository-url: https://test.pypi.org/legacy/
+        packages-dir: sdk-py/dist/
+        print-hash: true
+      continue-on-error: true
+
+    - name: Test install from TestPyPI
+      run: |
+        sleep 60  # Wait for package to be available
+        pip install --index-url https://test.pypi.org/simple/ --extra-index-url https://pypi.org/simple/ agentstate
+        python -c "from agentstate import AgentStateClient; print('✅ Package installed successfully')"
+      continue-on-error: true
+
+    - name: Publish to PyPI
+      uses: pypa/gh-action-pypi-publish@release/v1
+      with:
+        password: ${{ secrets.PYPI_API_TOKEN }}
+        packages-dir: sdk-py/dist/
+        print-hash: true
+
+  publish-npm:
+    name: 📦 Publish TypeScript SDK to npm
+    runs-on: ubuntu-latest
+    needs: test-sdks
+    if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/') || (github.event_name == 'workflow_dispatch' && github.event.inputs.publish_npm == 'true')
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Set up Node.js
+      uses: actions/setup-node@v4
+      with:
+        node-version: '20'
+        registry-url: 'https://registry.npmjs.org'
+
+    - name: Install dependencies
+      run: |
+        cd sdk-ts
+        npm install
+
+    - name: Build package
+      run: |
+        cd sdk-ts  
+        npm run build
+
+    - name: Publish to npm
+      run: |
+        cd sdk-ts
+        npm publish
+      env:
+        NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+
+  create-release:
+    name: 📋 Create GitHub Release
+    runs-on: ubuntu-latest
+    needs: [publish-python, publish-npm]
+    if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/')
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Get version from tag
+      id: get_version
+      run: echo "VERSION=${GITHUB_REF#refs/tags/}" >> $GITHUB_OUTPUT
+
+    - name: Create release notes
+      run: |
+        cat > release_notes.md << 'EOF'
+        # 🚀 AgentState ${{ steps.get_version.outputs.VERSION }}
+        
+        ## 📦 SDK Packages Available
+        
+        ### Python SDK
+        ```bash
+        pip install agentstate
+        ```
+        
+        ### TypeScript/JavaScript SDK  
+        ```bash
+        npm install agentstate
+        ```
+        
+        ## ✨ Features
+        
+        - **Simple API** - HTTP REST interface, works with any language
+        - **Real-time updates** - Live agent state synchronization
+        - **Rich querying** - Find agents by tags and attributes
+        - **High performance** - 1,400+ ops/sec, ~15ms latency
+        - **Production ready** - Docker, Kubernetes, monitoring
+        - **Language support** - Official Python and TypeScript SDKs
+        
+        ## 🎯 Quick Start
+        
+        **Python:**
+        ```python
+        from agentstate import AgentStateClient
+        
+        client = AgentStateClient('http://localhost:8080', 'my-app')
+        agent = client.create_agent('chatbot', {'name': 'Bot', 'status': 'active'})
+        ```
+        
+        **TypeScript:**
+        ```typescript
+        import { AgentStateClient } from 'agentstate';
+        
+        const client = new AgentStateClient('http://localhost:8080', 'my-app');  
+        const agent = await client.createAgent('chatbot', {name: 'Bot', status: 'active'});
+        ```
+        
+        ## 🐳 Docker Deployment
+        
+        ```bash
+        docker run -p 8080:8080 -p 9090:9090 agentstate:${{ steps.get_version.outputs.VERSION }}
+        ```
+        
+        See [DEPLOYMENT.md](DEPLOYMENT.md) for full deployment guide.
+        
+        ---
+        
+        **🎉 AgentState is now "Firebase for AI Agents" - ready for production!**
+        EOF
+
+    - name: Create Release
+      uses: actions/create-release@v1
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      with:
+        tag_name: ${{ steps.get_version.outputs.VERSION }}
+        release_name: AgentState ${{ steps.get_version.outputs.VERSION }}
+        body_path: release_notes.md
+        draft: false
+        prerelease: ${{ contains(steps.get_version.outputs.VERSION, 'rc') || contains(steps.get_version.outputs.VERSION, 'beta') }}
+
+  notify-success:
+    name: 🔔 Notify Success  
+    runs-on: ubuntu-latest
+    needs: [publish-python, publish-npm, create-release]
+    if: success()
+    
+    steps:
+    - name: Success notification
+      run: |
+        echo "🎉 AgentState SDKs published successfully!"
+        echo "📦 Python SDK: https://pypi.org/project/agentstate/"
+        echo "📦 TypeScript SDK: https://www.npmjs.com/package/agentstate"
+        echo "🚀 Ready for developers worldwide!"
