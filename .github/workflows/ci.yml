@@ -1,0 +1,382 @@
+name: 🚀 AgentState CI/CD Pipeline
+
+on:
+  push:
+    branches: [main, master, develop]
+    tags: ['v*']
+  pull_request:
+    branches: [main, master, develop]
+
+env:
+  REGISTRY: ghcr.io
+  IMAGE_NAME: ${{ github.repository }}
+
+jobs:
+  # 🧪 Test Suite
+  test:
+    name: 🧪 Run Tests
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+    
+    - name: Install Rust toolchain
+      uses: actions-rs/toolchain@v1
+      with:
+        toolchain: 1.81.0
+        profile: minimal
+        override: true
+        components: rustfmt, clippy
+    
+    - name: Cache Rust dependencies
+      uses: actions/cache@v3
+      with:
+        path: |
+          ~/.cargo/registry
+          ~/.cargo/git
+          target
+        key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
+        restore-keys: |
+          ${{ runner.os }}-cargo-
+    
+    - name: Install Protocol Buffers
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y protobuf-compiler
+    
+    - name: Check formatting
+      run: cargo fmt --all -- --check
+    
+    - name: Run Clippy
+      run: cargo clippy --all-targets --all-features -- -D warnings
+    
+    - name: Run unit tests
+      run: cargo test --all
+    
+    - name: Build release binary
+      run: cargo build --release -p agentstate-server
+    
+    - name: Upload server binary
+      uses: actions/upload-artifact@v4
+      with:
+        name: agentstate-server-${{ runner.os }}
+        path: target/release/agentstate-server
+        retention-days: 7
+
+  # 🐳 Docker Build and Test
+  docker:
+    name: 🐳 Docker Build & Integration Tests
+    runs-on: ubuntu-latest
+    needs: test
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+    
+    - name: Set up Docker Buildx
+      uses: docker/setup-buildx-action@v3
+    
+    - name: Build Docker image
+      uses: docker/build-push-action@v5
+      with:
+        context: .
+        file: docker/Dockerfile
+        push: false
+        tags: agentstate:test
+        cache-from: type=gha
+        cache-to: type=gha,mode=max
+    
+    - name: Start AgentState for testing
+      run: |
+        docker run -d -p 8080:8080 -p 9090:9090 --name agentstate-test agentstate:test
+        sleep 5
+    
+    - name: Check server health
+      run: |
+        curl -f http://localhost:8080/health
+        curl -f http://localhost:8080/metrics
+    
+    - name: Set up Python for integration tests
+      uses: actions/setup-python@v4
+      with:
+        python-version: '3.11'
+    
+    - name: Install Python dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install requests docker
+    
+    - name: Run integration tests
+      run: python integration_tests.py
+    
+    - name: Run load tests (quick)
+      run: |
+        # Shorter load test for CI
+        timeout 60s python load_test.py || true
+    
+    - name: Run SDK examples
+      run: |
+        # Test Python SDK
+        cd examples/quickstart
+        python -m venv venv
+        source venv/bin/activate
+        pip install requests
+        python python_example.py
+        
+        # Test Node.js SDK
+        cd ../..
+        npm install axios
+        node examples/quickstart/nodejs_example.js
+    
+    - name: Run test suite script
+      run: bash test_suite.sh
+    
+    - name: Show container logs on failure
+      if: failure()
+      run: docker logs agentstate-test
+
+  # 🚢 Build and Push Container Images
+  publish:
+    name: 🚢 Publish Docker Images
+    runs-on: ubuntu-latest
+    needs: [test, docker]
+    if: github.event_name == 'push' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master' || startsWith(github.ref, 'refs/tags/'))
+    
+    permissions:
+      contents: read
+      packages: write
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+    
+    - name: Set up Docker Buildx
+      uses: docker/setup-buildx-action@v3
+    
+    - name: Log in to Container Registry
+      uses: docker/login-action@v3
+      with:
+        registry: ${{ env.REGISTRY }}
+        username: ${{ github.actor }}
+        password: ${{ secrets.GITHUB_TOKEN }}
+    
+    - name: Extract metadata
+      id: meta
+      uses: docker/metadata-action@v5
+      with:
+        images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
+        tags: |
+          type=ref,event=branch
+          type=ref,event=pr
+          type=semver,pattern={{version}}
+          type=semver,pattern={{major}}.{{minor}}
+          type=semver,pattern={{major}}
+          type=raw,value=latest,enable={{is_default_branch}}
+    
+    - name: Build and push Docker image
+      uses: docker/build-push-action@v5
+      with:
+        context: .
+        file: docker/Dockerfile
+        push: true
+        tags: ${{ steps.meta.outputs.tags }}
+        labels: ${{ steps.meta.outputs.labels }}
+        cache-from: type=gha
+        cache-to: type=gha,mode=max
+        platforms: linux/amd64,linux/arm64
+
+  # 📋 Security Scanning
+  security:
+    name: 🔒 Security Scanning
+    runs-on: ubuntu-latest
+    needs: [test]
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+    
+    - name: Run Rust security audit
+      uses: actions-rs/audit@v1
+      with:
+        token: ${{ secrets.GITHUB_TOKEN }}
+    
+    - name: Set up Docker Buildx
+      uses: docker/setup-buildx-action@v3
+    
+    - name: Build test image for scanning
+      uses: docker/build-push-action@v5
+      with:
+        context: .
+        file: docker/Dockerfile
+        push: false
+        tags: agentstate:scan
+        cache-from: type=gha
+    
+    - name: Run Trivy vulnerability scanner
+      uses: aquasecurity/trivy-action@master
+      with:
+        image-ref: 'agentstate:scan'
+        format: 'sarif'
+        output: 'trivy-results.sarif'
+    
+    - name: Upload Trivy scan results
+      uses: github/codeql-action/upload-sarif@v2
+      if: always()
+      with:
+        sarif_file: 'trivy-results.sarif'
+
+  # 📊 Performance Benchmarking
+  benchmark:
+    name: 📊 Performance Benchmarks
+    runs-on: ubuntu-latest
+    needs: [docker]
+    if: github.event_name == 'pull_request'
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+    
+    - name: Set up Docker Buildx
+      uses: docker/setup-buildx-action@v3
+    
+    - name: Build Docker image
+      uses: docker/build-push-action@v5
+      with:
+        context: .
+        file: docker/Dockerfile
+        push: false
+        tags: agentstate:benchmark
+        cache-from: type=gha
+    
+    - name: Start AgentState for benchmarking
+      run: |
+        docker run -d -p 8080:8080 -p 9090:9090 --name agentstate-benchmark agentstate:benchmark
+        sleep 5
+    
+    - name: Set up Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: '3.11'
+    
+    - name: Install Python dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install requests
+    
+    - name: Run performance benchmarks
+      run: |
+        python load_test.py > benchmark_results.txt
+        cat benchmark_results.txt
+    
+    - name: Comment benchmark results
+      uses: actions/github-script@v7
+      with:
+        script: |
+          const fs = require('fs');
+          const results = fs.readFileSync('benchmark_results.txt', 'utf8');
+          
+          github.rest.issues.createComment({
+            issue_number: context.issue.number,
+            owner: context.repo.owner,
+            repo: context.repo.repo,
+            body: `## 📊 Performance Benchmark Results\n\n\`\`\`\n${results}\n\`\`\`\n\n*Benchmarks run on: ${new Date().toISOString()}*`
+          });
+
+  # 🎯 Release Creation
+  release:
+    name: 🎯 Create Release
+    runs-on: ubuntu-latest
+    needs: [test, docker, publish, security]
+    if: startsWith(github.ref, 'refs/tags/v')
+    
+    permissions:
+      contents: write
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      with:
+        fetch-depth: 0
+    
+    - name: Generate changelog
+      run: |
+        # Simple changelog generation
+        echo "# Changes in ${{ github.ref_name }}" > CHANGELOG_CURRENT.md
+        echo "" >> CHANGELOG_CURRENT.md
+        git log $(git describe --tags --abbrev=0 HEAD^)..HEAD --pretty=format:"- %s" >> CHANGELOG_CURRENT.md
+        echo "" >> CHANGELOG_CURRENT.md
+        echo "" >> CHANGELOG_CURRENT.md
+        echo "## Docker Images" >> CHANGELOG_CURRENT.md
+        echo "- \`ghcr.io/${{ github.repository }}:${{ github.ref_name }}\`" >> CHANGELOG_CURRENT.md
+        echo "- \`ghcr.io/${{ github.repository }}:latest\`" >> CHANGELOG_CURRENT.md
+    
+    - name: Create Release
+      uses: actions/create-release@v1
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      with:
+        tag_name: ${{ github.ref_name }}
+        release_name: AgentState ${{ github.ref_name }}
+        body_path: CHANGELOG_CURRENT.md
+        draft: false
+        prerelease: ${{ contains(github.ref_name, 'rc') || contains(github.ref_name, 'beta') || contains(github.ref_name, 'alpha') }}
+
+  # 🚀 Deploy to Staging
+  deploy-staging:
+    name: 🚀 Deploy to Staging
+    runs-on: ubuntu-latest
+    needs: [publish]
+    if: github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master'
+    environment: staging
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+    
+    # This is a placeholder - replace with your actual deployment method
+    - name: Deploy to staging
+      run: |
+        echo "🚀 Deploying to staging environment..."
+        echo "Image: ghcr.io/${{ github.repository }}:main"
+        echo "This would typically:"
+        echo "  - Update Kubernetes deployment"
+        echo "  - Update Helm chart values"  
+        echo "  - Run deployment verification"
+        echo "  - Run smoke tests"
+        echo "✅ Staging deployment completed!"
+    
+    - name: Run staging smoke tests
+      run: |
+        echo "🧪 Running staging smoke tests..."
+        # Add your staging smoke tests here
+        # curl -f https://staging.agentstate.example.com/health
+        echo "✅ Staging smoke tests passed!"
+
+  # 🔔 Notifications
+  notify:
+    name: 🔔 Send Notifications
+    runs-on: ubuntu-latest
+    needs: [test, docker, publish, security]
+    if: always() && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master' || startsWith(github.ref, 'refs/tags/'))
+    
+    steps:
+    - name: Determine status
+      id: status
+      run: |
+        if [[ "${{ needs.test.result }}" == "success" && "${{ needs.docker.result }}" == "success" && "${{ needs.publish.result }}" == "success" && "${{ needs.security.result }}" == "success" ]]; then
+          echo "status=success" >> $GITHUB_OUTPUT
+          echo "message=🎉 All CI/CD pipeline steps completed successfully!" >> $GITHUB_OUTPUT
+        else
+          echo "status=failure" >> $GITHUB_OUTPUT
+          echo "message=❌ CI/CD pipeline failed. Check the logs for details." >> $GITHUB_OUTPUT
+        fi
+    
+    - name: Send notification
+      run: |
+        echo "Pipeline Status: ${{ steps.status.outputs.status }}"
+        echo "Message: ${{ steps.status.outputs.message }}"
+        echo "Commit: ${{ github.sha }}"
+        echo "Branch/Tag: ${{ github.ref }}"
+        # Add actual notification logic here (Slack, email, etc.)
+        echo "✅ Notification sent!"

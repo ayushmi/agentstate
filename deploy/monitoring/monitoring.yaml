@@ -1,0 +1,208 @@
+apiVersion: v1
+kind: ServiceMonitor
+metadata:
+  name: agentstate
+  namespace: agentstate
+  labels:
+    app: agentstate
+    prometheus: kube-prometheus
+spec:
+  selector:
+    matchLabels:
+      app: agentstate
+  endpoints:
+  - port: http
+    path: /metrics
+    interval: 30s
+    scrapeTimeout: 10s
+---
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: agentstate-alerts
+  namespace: agentstate
+  labels:
+    app: agentstate
+    prometheus: kube-prometheus
+spec:
+  groups:
+  - name: agentstate.rules
+    interval: 30s
+    rules:
+    - alert: AgentStateDown
+      expr: up{job="agentstate"} == 0
+      for: 5m
+      labels:
+        severity: critical
+        service: agentstate
+      annotations:
+        summary: "AgentState instance is down"
+        description: "AgentState instance {{ $labels.instance }} has been down for more than 5 minutes."
+    
+    - alert: AgentStateHighLatency
+      expr: histogram_quantile(0.95, rate(op_duration_seconds_bucket[5m])) > 0.1
+      for: 10m
+      labels:
+        severity: warning
+        service: agentstate
+      annotations:
+        summary: "AgentState high latency"
+        description: "AgentState P95 latency is above 100ms for more than 10 minutes: {{ $value }}s"
+    
+    - alert: AgentStateHighErrorRate
+      expr: rate(agentstate_errors_total[5m]) > 0.1
+      for: 5m
+      labels:
+        severity: warning
+        service: agentstate
+      annotations:
+        summary: "AgentState high error rate"
+        description: "AgentState error rate is above 10% for more than 5 minutes: {{ $value }}"
+    
+    - alert: AgentStateHighMemoryUsage
+      expr: (container_memory_working_set_bytes{container="agentstate"} / container_spec_memory_limit_bytes{container="agentstate"}) > 0.8
+      for: 15m
+      labels:
+        severity: warning
+        service: agentstate
+      annotations:
+        summary: "AgentState high memory usage"
+        description: "AgentState memory usage is above 80% for more than 15 minutes: {{ $value | humanizePercentage }}"
+    
+    - alert: AgentStateHighCPUUsage
+      expr: rate(container_cpu_usage_seconds_total{container="agentstate"}[5m]) > 0.8
+      for: 15m
+      labels:
+        severity: warning
+        service: agentstate
+      annotations:
+        summary: "AgentState high CPU usage"
+        description: "AgentState CPU usage is above 80% for more than 15 minutes: {{ $value | humanizePercentage }}"
+    
+    - alert: AgentStateDiskSpaceRunningOut
+      expr: (1 - (node_filesystem_avail_bytes{mountpoint="/data"} / node_filesystem_size_bytes{mountpoint="/data"})) > 0.85
+      for: 30m
+      labels:
+        severity: warning
+        service: agentstate
+      annotations:
+        summary: "AgentState disk space running out"
+        description: "AgentState disk usage is above 85%: {{ $value | humanizePercentage }}"
+    
+    - alert: AgentStateWALSegmentsHigh
+      expr: wal_active_segments > 100
+      for: 30m
+      labels:
+        severity: warning
+        service: agentstate
+      annotations:
+        summary: "AgentState has too many WAL segments"
+        description: "AgentState has {{ $value }} active WAL segments, which may indicate slow compaction"
+    
+    - alert: AgentStateWatchClientsHigh
+      expr: sum(watch_clients) > 10000
+      for: 10m
+      labels:
+        severity: warning
+        service: agentstate
+      annotations:
+        summary: "AgentState has many watch clients"
+        description: "AgentState has {{ $value }} active watch clients, which may impact performance"
+
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: agentstate-dashboard
+  namespace: agentstate
+  labels:
+    app: agentstate
+    grafana_dashboard: "1"
+data:
+  agentstate-dashboard.json: |
+    {
+      "dashboard": {
+        "id": null,
+        "title": "AgentState Dashboard",
+        "tags": ["agentstate"],
+        "style": "dark",
+        "timezone": "browser",
+        "refresh": "30s",
+        "time": {
+          "from": "now-1h",
+          "to": "now"
+        },
+        "panels": [
+          {
+            "id": 1,
+            "title": "Request Rate",
+            "type": "stat",
+            "targets": [
+              {
+                "expr": "sum(rate(agentstate_ops_total[5m]))",
+                "legendFormat": "Total ops/sec"
+              }
+            ],
+            "fieldConfig": {
+              "defaults": {
+                "unit": "reqps"
+              }
+            },
+            "gridPos": {"h": 8, "w": 12, "x": 0, "y": 0}
+          },
+          {
+            "id": 2,
+            "title": "Response Time",
+            "type": "stat",
+            "targets": [
+              {
+                "expr": "histogram_quantile(0.95, sum(rate(op_duration_seconds_bucket[5m])) by (le))",
+                "legendFormat": "P95 Latency"
+              }
+            ],
+            "fieldConfig": {
+              "defaults": {
+                "unit": "s"
+              }
+            },
+            "gridPos": {"h": 8, "w": 12, "x": 12, "y": 0}
+          },
+          {
+            "id": 3,
+            "title": "Active Watch Clients",
+            "type": "graph",
+            "targets": [
+              {
+                "expr": "sum(watch_clients) by (proto)",
+                "legendFormat": "{{ proto }}"
+              }
+            ],
+            "gridPos": {"h": 8, "w": 24, "x": 0, "y": 8}
+          },
+          {
+            "id": 4,
+            "title": "WAL Segments",
+            "type": "graph",
+            "targets": [
+              {
+                "expr": "wal_active_segments",
+                "legendFormat": "Active segments"
+              }
+            ],
+            "gridPos": {"h": 8, "w": 12, "x": 0, "y": 16}
+          },
+          {
+            "id": 5,
+            "title": "Memory Usage",
+            "type": "graph",
+            "targets": [
+              {
+                "expr": "container_memory_working_set_bytes{container=\"agentstate\"} / 1024 / 1024",
+                "legendFormat": "Memory (MB)"
+              }
+            ],
+            "gridPos": {"h": 8, "w": 12, "x": 12, "y": 16}
+          }
+        ]
+      }
+    }

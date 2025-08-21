@@ -1,0 +1,56 @@
+name: ✅ Tests
+
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+    branches: [main, master]
+
+jobs:
+  test:
+    name: Test Suite
+    runs-on: ubuntu-latest
+    
+    steps:
+    - uses: actions/checkout@v4
+    
+    - name: Install Rust
+      uses: actions-rs/toolchain@v1
+      with:
+        toolchain: 1.81.0
+        profile: minimal
+        override: true
+    
+    - name: Install protoc
+      run: sudo apt-get update && sudo apt-get install -y protobuf-compiler
+    
+    - name: Cache dependencies
+      uses: actions/cache@v3
+      with:
+        path: |
+          ~/.cargo/registry
+          ~/.cargo/git
+          target
+        key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
+    
+    - name: Check formatting
+      run: cargo fmt --all -- --check
+    
+    - name: Clippy
+      run: cargo clippy --all-targets --all-features -- -D warnings
+    
+    - name: Run tests
+      run: cargo test --all
+    
+    - name: Build server
+      run: cargo build --release -p agentstate-server
+    
+    - name: Build Docker image
+      run: docker build -f docker/Dockerfile -t agentstate:test .
+    
+    - name: Test Docker image
+      run: |
+        docker run -d -p 8080:8080 --name test-container agentstate:test
+        sleep 5
+        curl -f http://localhost:8080/health
+        docker stop test-container
