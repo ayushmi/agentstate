@@ -2,8 +2,8 @@ version: '3.8'
 
 services:
   agentstate:
-    # Use the locally built image for testing
-    image: agentstate/server:latest
+    # Use the published Docker image
+    image: ayushmi/agentstate:latest
     # build:  # Uncomment to build from source (takes 5+ minutes)
     #   context: ..
     #   dockerfile: docker/Dockerfile

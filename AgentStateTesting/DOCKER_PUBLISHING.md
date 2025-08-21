@@ -19,13 +19,13 @@ The AgentState Docker image is built and ready for publishing. The testing envir
 ### Publishing Commands
 
 ```bash
-# Tag for Docker Hub (replace with actual organization/username)
-docker tag agentstate/server:latest ayushsmittal/agentstate:latest
-docker tag agentstate/server:1.0.0 ayushsmittal/agentstate:1.0.0
+# Tag for Docker Hub
+docker tag agentstate/server:latest ayushmi/agentstate:latest
+docker tag agentstate/server:1.0.0 ayushmi/agentstate:1.0.0
 
 # Push to Docker Hub
-docker push ayushsmittal/agentstate:latest
-docker push ayushsmittal/agentstate:1.0.0
+docker push ayushmi/agentstate:latest
+docker push ayushmi/agentstate:1.0.0
 ```
 
 ### Update docker-compose.yml
@@ -35,7 +35,7 @@ Once published, update the testing docker-compose.yml:
 ```yaml
 services:
   agentstate:
-    image: ayushsmittal/agentstate:latest
+    image: ayushmi/agentstate:latest
     # Remove the build section
 ```
 
@@ -67,7 +67,7 @@ Once published, users can run AgentState with:
 
 ```bash
 # Using docker run
-docker run -p 8080:8080 -e DATA_DIR=/data -v agentstate-data:/data ayushsmittal/agentstate:latest
+docker run -p 8080:8080 -e DATA_DIR=/data -v agentstate-data:/data ayushmi/agentstate:latest
 
 # Using docker-compose (in AgentStateTesting)
 docker-compose up -d agentstate
@@ -77,8 +77,8 @@ docker-compose up -d agentstate
 
 ```bash
 # Pull and test the published image
-docker pull ayushsmittal/agentstate:latest
-docker run -p 8080:8080 ayushsmittal/agentstate:latest
+docker pull ayushmi/agentstate:latest
+docker run -p 8080:8080 ayushmi/agentstate:latest
 
 # Test health endpoint
 curl http://localhost:8080/health

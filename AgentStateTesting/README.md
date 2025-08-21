@@ -33,8 +33,11 @@ AgentStateTesting/
 ### 1. Start AgentState Server
 
 ```bash
-# Start local AgentState server with Docker
+# Start AgentState server with Docker (pulls from Docker Hub)
 docker-compose up -d
+
+# Alternative: Run directly with Docker
+docker run -p 8080:8080 ayushmi/agentstate:latest
 ```
 
 ### 2. Run Python Tests
