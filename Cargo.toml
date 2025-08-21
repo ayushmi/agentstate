@@ -36,7 +36,7 @@ tokio-stream = "0.1"
 tokio-util = { version = "0.7", features = ["rt"] }
 parking_lot = "0.12"
 async-trait = "0.1"
-tonic = { version = "0.11", features = ["transport", "tls", "tls-roots"] }
+tonic = { version = "0.14", features = ["transport", "tls", "tls-roots"] }
 prost = "0.12"
 prost-types = "0.12"
 async-stream = "0.3"
