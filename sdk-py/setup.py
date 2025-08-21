@@ -5,7 +5,7 @@ with open("README.md", "r", encoding="utf-8") as fh:
 
 setup(
     name="agentstate",
-    version="1.0.0",
+    version="1.0.1",
     author="Ayush Mittal",
     author_email="ayushsmittal@gmail.com",
     description="Firebase for AI Agents - Persistent state management for AI applications",

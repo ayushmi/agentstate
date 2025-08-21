@@ -14,7 +14,7 @@ class AgentStateClient:
     - High performance and reliability
     
     Example:
-        client = AgentStateClient("http://localhost:8080", "my-app")
+        client = AgentStateClient("http://localhost:8080", "my-app", api_key="your-api-key")
         
         # Create an agent
         agent = client.create_agent("chatbot", 
@@ -25,21 +25,27 @@ class AgentStateClient:
         agents = client.query_agents({"team": "support"})
     """
     
-    def __init__(self, base_url: str = "http://localhost:8080", namespace: str = "default"):
+    def __init__(self, base_url: str = "http://localhost:8080", namespace: str = "default", api_key: Optional[str] = None):
         """
         Initialize AgentState client.
         
         Args:
             base_url: AgentState server URL (e.g., "http://localhost:8080")
             namespace: Namespace for organizing agents (e.g., "production", "staging")
+            api_key: API key for authentication (optional, can also be set via AGENTSTATE_API_KEY env var)
         """
         self.base_url = base_url.rstrip('/')
         self.namespace = namespace
         self.session = requests.Session()
         self.session.headers.update({
             'Content-Type': 'application/json',
-            'User-Agent': 'agentstate-python-sdk/1.0.0'
+            'User-Agent': 'agentstate-python-sdk/1.0.1'
         })
+        
+        # Set up authentication if API key is provided
+        api_key = api_key or os.environ.get('AGENTSTATE_API_KEY')
+        if api_key:
+            self.session.headers['Authorization'] = f'Bearer {api_key}'
 
     def create_agent(self, agent_type: str, body: Dict[str, Any], 
                     tags: Optional[Dict[str, str]] = None, 

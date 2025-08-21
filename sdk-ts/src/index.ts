@@ -24,7 +24,7 @@ export interface Agent {
  * ```typescript
  * import { AgentStateClient } from 'agentstate';
  * 
- * const client = new AgentStateClient('http://localhost:8080', 'my-app');
+ * const client = new AgentStateClient('http://localhost:8080', 'my-app', 'your-api-key');
  * 
  * // Create an agent
  * const agent = await client.createAgent('chatbot', {
@@ -48,15 +48,25 @@ export class AgentStateClient {
    * 
    * @param baseUrl AgentState server URL (e.g., "http://localhost:8080")
    * @param namespace Namespace for organizing agents (e.g., "production", "staging")
+   * @param apiKey API key for authentication (optional, can also be set via AGENTSTATE_API_KEY env var)
    */
-  constructor(baseUrl: string = 'http://localhost:8080', namespace: string = 'default') {
+  constructor(baseUrl: string = 'http://localhost:8080', namespace: string = 'default', apiKey?: string) {
     this.baseUrl = baseUrl.replace(/\/$/, '');
     this.namespace = namespace;
+    
+    const headers: Record<string, string> = {
+      'Content-Type': 'application/json',
+      'User-Agent': 'agentstate-typescript-sdk/1.0.1'
+    };
+    
+    // Set up authentication if API key is provided
+    const key = apiKey || process.env.AGENTSTATE_API_KEY;
+    if (key) {
+      headers['Authorization'] = `Bearer ${key}`;
+    }
+    
     this.http = axios.create({
-      headers: {
-        'Content-Type': 'application/json',
-        'User-Agent': 'agentstate-typescript-sdk/1.0.0'
-      },
+      headers,
       timeout: 30000
     });
   }
