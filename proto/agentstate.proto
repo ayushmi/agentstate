@@ -1,0 +1,42 @@
+syntax = "proto3";
+package agentstate.v1;
+
+message Object {
+  string id = 1;
+  string ns = 2;
+  string type = 3;
+  string body_json = 4;
+  map<string,string> tags = 5;
+  uint64 ttl_seconds = 6;
+  repeated string parents = 7;
+  string commit = 8;
+  string ts_rfc3339 = 9;
+}
+
+message PutRequest {
+  string ns = 1;
+  string type = 2;
+  string body_json = 3;
+  map<string,string> tags = 4;
+  uint64 ttl_seconds = 5;
+  repeated string parents = 6;
+  string id = 7; // optional
+}
+
+message GetRequest { string ns = 1; string id = 2; string at_ts_rfc3339 = 3; }
+message QueryRequest { string ns = 1; string tag_json = 2; string jsonpath = 3; }
+message QueryResponse { repeated Object objects = 1; }
+
+message DeleteRequest { string ns = 1; string id = 2; }
+message Empty {}
+
+service AgentState {
+  rpc Put(PutRequest) returns (Object);
+  rpc Get(GetRequest) returns (Object);
+  rpc Query(QueryRequest) returns (QueryResponse);
+  rpc Delete(DeleteRequest) returns (Empty);
+  rpc Watch(WatchRequest) returns (stream WatchEvent);
+}
+
+message WatchRequest { string ns = 1; uint64 from_commit = 2; }
+message WatchEvent { string type = 1; Object obj = 2; string id = 3; uint64 commit = 4; }

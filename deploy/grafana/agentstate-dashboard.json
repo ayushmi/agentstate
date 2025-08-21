@@ -1,0 +1,166 @@
+{
+  "title": "AgentState Overview (MVP)",
+  "panels": [
+    {"type":"stat", "title":"Ops/sec (put)", "targets":[{"expr":"rate(agentstate_ops_total{op=\"put\"}[1m])"}]},
+    {"type":"stat", "title":"Ops/sec (get)", "targets":[{"expr":"rate(agentstate_ops_total{op=\"get\"}[1m])"}]},
+    {"type":"graph", "title":"Put Duration p95", "targets":[{"expr":"histogram_quantile(0.95, sum(rate(op_duration_seconds_bucket{op=\"put\"}[1m])) by (le))"}]}
+  ]
+}
+{
+  "annotations": {"list": []},
+  "editable": true,
+  "fiscalYearStartMonth": 1,
+  "graphTooltip": 1,
+  "id": null,
+  "links": [],
+  "liveNow": false,
+  "panels": [
+    {
+      "type": "row",
+      "title": "Overview",
+      "gridPos": {"h": 1, "w": 24, "x": 0, "y": 0},
+      "collapsed": false,
+      "panels": []
+    },
+    {
+      "type": "stat",
+      "title": "Watch Clients",
+      "gridPos": {"h": 4, "w": 6, "x": 0, "y": 1},
+      "datasource": {"type": "prometheus", "uid": "${DS_PROM}"},
+      "targets": [{"expr": "sum(watch_clients)", "refId": "A"}]
+    },
+    {
+      "type": "stat",
+      "title": "WAL Active Segments",
+      "gridPos": {"h": 4, "w": 6, "x": 6, "y": 1},
+      "datasource": {"type": "prometheus", "uid": "${DS_PROM}"},
+      "targets": [{"expr": "wal_active_segments", "refId": "A"}]
+    },
+    {
+      "type": "stat",
+      "title": "Storage Bytes (Total)",
+      "gridPos": {"h": 4, "w": 6, "x": 12, "y": 1},
+      "datasource": {"type": "prometheus", "uid": "${DS_PROM}"},
+      "targets": [{"expr": "storage_bytes_total", "refId": "A"}],
+      "options": {"reduceOptions": {"calcs": ["lastNotNull"]}, "fieldOptions": {"unit": "bytes"}}
+    },
+    {
+      "type": "stat",
+      "title": "Watch Backlog (max by ns)",
+      "gridPos": {"h": 4, "w": 6, "x": 18, "y": 1},
+      "datasource": {"type": "prometheus", "uid": "${DS_PROM}"},
+      "targets": [{"expr": "max_over_time(watch_backlog_events[5m])", "refId": "A"}]
+    },
+    {
+      "type": "row",
+      "title": "Throughput",
+      "gridPos": {"h": 1, "w": 24, "x": 0, "y": 5},
+      "collapsed": false,
+      "panels": []
+    },
+    {
+      "type": "timeseries",
+      "title": "Ops/sec (put|get|query)",
+      "gridPos": {"h": 8, "w": 12, "x": 0, "y": 6},
+      "datasource": {"type": "prometheus", "uid": "${DS_PROM}"},
+      "targets": [{"expr": "sum by(op)(rate(agentstate_ops_total[1m]))", "refId": "A"}]
+    },
+    {
+      "type": "timeseries",
+      "title": "Watch Events/sec & Resumes/sec",
+      "gridPos": {"h": 8, "w": 12, "x": 12, "y": 6},
+      "datasource": {"type": "prometheus", "uid": "${DS_PROM}"},
+      "targets": [
+        {"expr": "rate(watch_events_total[1m])", "refId": "A"},
+        {"expr": "rate(watch_resumes_total[1m])", "refId": "B"}
+      ]
+    },
+    {
+      "type": "row",
+      "title": "Latency & WAL",
+      "gridPos": {"h": 1, "w": 24, "x": 0, "y": 14},
+      "collapsed": false,
+      "panels": []
+    },
+    {
+      "type": "timeseries",
+      "title": "PUT latency p50/p95/p99",
+      "gridPos": {"h": 8, "w": 8, "x": 0, "y": 15},
+      "datasource": {"type": "prometheus", "uid": "${DS_PROM}"},
+      "targets": [
+        {"expr": "histogram_quantile(0.50, sum(rate(op_duration_seconds_bucket{op=\"put\"}[5m])) by (le))", "refId": "A"},
+        {"expr": "histogram_quantile(0.95, sum(rate(op_duration_seconds_bucket{op=\"put\"}[5m])) by (le))", "refId": "B"},
+        {"expr": "histogram_quantile(0.99, sum(rate(op_duration_seconds_bucket{op=\"put\"}[5m])) by (le))", "refId": "C"}
+      ]
+    },
+    {
+      "type": "timeseries",
+      "title": "Watch emit lag p95",
+      "gridPos": {"h": 8, "w": 8, "x": 8, "y": 15},
+      "datasource": {"type": "prometheus", "uid": "${DS_PROM}"},
+      "targets": [
+        {"expr": "histogram_quantile(0.95, sum(rate(watch_emit_lag_seconds_bucket[5m])) by (le))", "refId": "A"}
+      ]
+    },
+    {
+      "type": "timeseries",
+      "title": "WAL fsync p95 & Batch Size p95",
+      "gridPos": {"h": 8, "w": 8, "x": 16, "y": 15},
+      "datasource": {"type": "prometheus", "uid": "${DS_PROM}"},
+      "targets": [
+        {"expr": "histogram_quantile(0.95, sum(rate(wal_fsync_seconds_bucket[5m])) by (le))", "refId": "A"},
+        {"expr": "histogram_quantile(0.95, sum(rate(wal_batch_bytes_bucket[5m])) by (le))", "refId": "B"}
+      ]
+    },
+    {
+      "type": "row",
+      "title": "Vectors & Snapshots",
+      "gridPos": {"h": 1, "w": 24, "x": 0, "y": 23},
+      "collapsed": false,
+      "panels": []
+    },
+    {
+      "type": "timeseries",
+      "title": "Vector query latency p95",
+      "gridPos": {"h": 8, "w": 12, "x": 0, "y": 24},
+      "datasource": {"type": "prometheus", "uid": "${DS_PROM}"},
+      "targets": [
+        {"expr": "histogram_quantile(0.95, sum(rate(vector_query_seconds_bucket[5m])) by (le))", "refId": "A"}
+      ]
+    },
+    {
+      "type": "timeseries",
+      "title": "Snapshot runs & duration p95",
+      "gridPos": {"h": 8, "w": 12, "x": 12, "y": 24},
+      "datasource": {"type": "prometheus", "uid": "${DS_PROM}"},
+      "targets": [
+        {"expr": "rate(snapshot_total[5m])", "refId": "A"},
+        {"expr": "histogram_quantile(0.95, sum(rate(snapshot_duration_seconds_bucket[5m])) by (le))", "refId": "B"}
+      ]
+    }
+  ],
+  "refresh": "10s",
+  "schemaVersion": 39,
+  "style": "dark",
+  "tags": ["agentstate"],
+  "templating": {
+    "list": [
+      {
+        "name": "ns",
+        "label": "Namespace",
+        "type": "query",
+        "datasource": {"type": "prometheus", "uid": "${DS_PROM}"},
+        "query": "label_values(watch_backlog_events, ns)",
+        "refresh": 2,
+        "includeAll": true,
+        "multi": true
+      }
+    ]
+  },
+  "time": {"from": "now-1h", "to": "now"},
+  "timezone": "",
+  "title": "AgentState Overview",
+  "uid": null,
+  "version": 1,
+  "weekStart": ""
+}

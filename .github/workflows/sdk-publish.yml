@@ -1,0 +1,23 @@
+name: sdk-publish
+on:
+  push:
+    tags: [ 'v*' ]
+jobs:
+  pypi:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: { python-version: '3.11' }
+      - run: python -m pip install build twine
+      - run: cd sdk-py && python -m build
+      - run: twine upload --non-interactive -u __token__ -p ${{ secrets.PYPI_TOKEN }} sdk-py/dist/*
+  npm:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: '20', registry-url: 'https://registry.npmjs.org' }
+      - run: cd sdk-ts && npm version ${{ github.ref_name }} --no-git-tag-version || true
+      - run: cd sdk-ts && npm publish --access public
+        env: { NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }} }

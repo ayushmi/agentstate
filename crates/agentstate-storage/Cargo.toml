@@ -1,0 +1,23 @@
+[package]
+name = "agentstate-storage"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+agentstate-core = { path = "../agentstate-core" }
+serde = { workspace = true }
+serde_json = { workspace = true }
+thiserror = { workspace = true }
+tokio = { workspace = true }
+chrono = { workspace = true }
+parking_lot = { workspace = true }
+uuid = { workspace = true }
+futures = { workspace = true }
+tracing = { workspace = true }
+async-trait = { workspace = true }
+crc32c = { workspace = true }
+ciborium = { workspace = true }
+once_cell = { workspace = true }
+prometheus = { workspace = true }
+zstd = { workspace = true }
+ulid = { workspace = true }

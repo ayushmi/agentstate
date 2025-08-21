@@ -1,0 +1,39 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "agentstate.fullname" . }}
+spec:
+  replicas: {{ .Values.replicaCount }}
+  selector:
+    matchLabels:
+      app: {{ include "agentstate.name" . }}
+  template:
+    metadata:
+      labels:
+        app: {{ include "agentstate.name" . }}
+    spec:
+      containers:
+      - name: server
+        image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
+        imagePullPolicy: {{ .Values.image.pullPolicy }}
+        ports:
+        - containerPort: {{ .Values.service.portHttp }}
+        - containerPort: {{ .Values.service.portGrpc }}
+        env:
+        - name: AGENTSTATE_SECRET
+          value: {{ .Values.env.AGENTSTATE_SECRET | quote }}
+        livenessProbe:
+          httpGet:
+            path: /health
+            port: {{ .Values.service.portHttp }}
+        readinessProbe:
+          httpGet:
+            path: /health
+            port: {{ .Values.service.portHttp }}
+        volumeMounts:
+        - name: data
+          mountPath: /data
+      volumes:
+      - name: data
+        persistentVolumeClaim:
+          claimName: {{ include "agentstate.fullname" . }}-pvc

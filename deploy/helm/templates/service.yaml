@@ -1,0 +1,14 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "agentstate.fullname" . }}
+spec:
+  selector:
+    app: {{ include "agentstate.name" . }}
+  ports:
+  - name: http
+    port: {{ .Values.service.portHttp }}
+    targetPort: {{ .Values.service.portHttp }}
+  - name: grpc
+    port: {{ .Values.service.portGrpc }}
+    targetPort: {{ .Values.service.portGrpc }}

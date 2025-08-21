@@ -1,0 +1,22 @@
+name: verify
+on: [pull_request, workflow_dispatch]
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    services:
+      agentstate:
+        image: ghcr.io/${{ github.repository }}/agentstate-server:dev
+        ports:
+          - 8080:8080
+        env:
+          DATA_DIR: /data
+          DEV_MODE: "1"
+          REGION: eu-west-1
+          CAP_KEY_ACTIVE_ID: active
+          CAP_KEY_ACTIVE: ${{ secrets.CAP_KEY_ACTIVE }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: { python-version: '3.11' }
+      - run: python3 -m pip install -r examples/tests/requirements.txt || true
+      - run: make verify BASE=http://localhost:8080 ADMIN_CAP=${{ secrets.ADMIN_CAP }} NS=agent://ci

@@ -1,0 +1,21 @@
+replicaCount: 3
+image:
+  repository: agentstate/server
+  tag: latest
+  pullPolicy: IfNotPresent
+service:
+  type: ClusterIP
+  portHttp: 8080
+  portGrpc: 9090
+resources:
+  limits:
+    cpu: 500m
+    memory: 512Mi
+  requests:
+    cpu: 250m
+    memory: 256Mi
+persistence:
+  enabled: true
+  size: 10Gi
+env:
+  AGENTSTATE_SECRET: ""

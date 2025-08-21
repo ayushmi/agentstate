@@ -1,0 +1,13 @@
+[package]
+name = "agentstate-cli"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+clap = { version = "4.5", features = ["derive"] }
+serde = { workspace = true }
+serde_json = { workspace = true }
+zstd = { workspace = true }
+anyhow = { workspace = true }
+agentstate-storage = { path = "../agentstate-storage" }
+ciborium = { workspace = true }
