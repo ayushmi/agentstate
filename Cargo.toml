@@ -46,7 +46,7 @@ ciborium = { version = "0.2", features = ["std"] }
 serde_cbor = "0.11"
 prometheus = "0.13"
 opentelemetry = "0.23"
-opentelemetry_sdk = { version = "0.23", features = ["rt-tokio"] }
+opentelemetry_sdk = { version = "0.30", features = ["rt-tokio"] }
 tracing-opentelemetry = "0.24"
 opentelemetry-otlp = { version = "0.16", features = ["grpc-tonic"] }
 once_cell = "1.19"
