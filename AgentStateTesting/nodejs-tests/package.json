@@ -1,0 +1,34 @@
+{
+  "name": "agentstate-testing",
+  "version": "1.0.0",
+  "description": "Testing environment for AgentState Node.js/TypeScript SDK",
+  "type": "module",
+  "scripts": {
+    "test": "node basic-sdk-test.js",
+    "test:langchain": "node langchainjs-example/test.js",
+    "test:openai": "node openai-agents-example/test.js",
+    "install-all": "npm install && cd langchainjs-example && npm install && cd ../openai-agents-example && npm install"
+  },
+  "dependencies": {
+    "agentstate": "^1.0.1",
+    "axios": "^1.6.0",
+    "dotenv": "^16.3.0",
+    "colors": "^1.4.0"
+  },
+  "devDependencies": {
+    "@types/node": "^20.0.0",
+    "typescript": "^5.4.0"
+  },
+  "engines": {
+    "node": ">=16.0.0"
+  },
+  "keywords": [
+    "agentstate",
+    "ai",
+    "agents",
+    "testing",
+    "firebase-for-agents"
+  ],
+  "author": "Ayush Mittal",
+  "license": "MIT"
+}

@@ -1,0 +1,42 @@
+version: '3.8'
+
+services:
+  agentstate:
+    image: agentstate/server:latest
+    ports:
+      - "8080:8080"
+    environment:
+      - DATA_DIR=/data
+      - RUST_LOG=info
+      # Uncomment to enable authentication (requires API keys)
+      # - CAP_KEY_ACTIVE=your-secret-key-here
+      # - CAP_KEY_ACTIVE_ID=active
+    volumes:
+      - agentstate_data:/data
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
+
+  # Optional: Prometheus for metrics collection
+  prometheus:
+    image: prom/prometheus:latest
+    ports:
+      - "9090:9090"
+    volumes:
+      - ./prometheus.yml:/etc/prometheus/prometheus.yml
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+      - '--storage.tsdb.path=/prometheus'
+      - '--web.console.libraries=/etc/prometheus/console_libraries'
+      - '--web.console.templates=/etc/prometheus/consoles'
+      - '--storage.tsdb.retention.time=200h'
+      - '--web.enable-lifecycle'
+    profiles:
+      - monitoring
+
+volumes:
+  agentstate_data:
+    driver: local

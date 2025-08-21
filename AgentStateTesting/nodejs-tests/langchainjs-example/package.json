@@ -1,0 +1,29 @@
+{
+  "name": "langchainjs-agentstate-example",
+  "version": "1.0.0",
+  "description": "LangChain.js + AgentState integration example",
+  "type": "module",
+  "main": "langchainjs_demo.js",
+  "scripts": {
+    "start": "node langchainjs_demo.js",
+    "test": "node test.js"
+  },
+  "dependencies": {
+    "agentstate": "^1.0.1",
+    "langchain": "^0.1.0",
+    "@langchain/openai": "^0.0.5",
+    "@langchain/community": "^0.0.10",
+    "dotenv": "^16.3.0",
+    "colors": "^1.4.0"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  },
+  "keywords": [
+    "langchain",
+    "agentstate",
+    "ai",
+    "agents",
+    "javascript"
+  ]
+}

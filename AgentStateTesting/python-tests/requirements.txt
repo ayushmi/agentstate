@@ -1,0 +1,23 @@
+# AgentState SDK
+agentstate>=1.0.1
+
+# Testing frameworks
+pytest>=7.4.0
+pytest-asyncio>=0.21.0
+requests>=2.31.0
+
+# Popular agentic frameworks for testing integration
+langchain>=0.1.0
+langchain-openai>=0.0.5
+langchain-community>=0.0.10
+crewai>=0.20.0
+autogen-agentchat>=0.2.0
+
+# OpenAI for testing AI agents
+openai>=1.10.0
+
+# Utilities
+python-dotenv>=1.0.0
+pydantic>=2.5.0
+tenacity>=8.2.0  # For retry logic
+colorama>=0.4.6  # For colored output
