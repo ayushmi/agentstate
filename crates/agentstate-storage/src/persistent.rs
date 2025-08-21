@@ -18,16 +18,16 @@ pub struct PersistentStore {
 
 impl PersistentStore {
     pub fn open(data_dir: PathBuf) -> std::io::Result<Self> {
-        let wal = WalWriter::open(&data_dir, 256 * 1024 * 1024, 0)?;
-        let manifest = wal.manifest();
+        let wal_writer = WalWriter::open(&data_dir, 256 * 1024 * 1024, 0)?;
+        let manifest = wal_writer.manifest();
         // Replay existing WAL
         let recs = crate::walbin::replay(&data_dir).unwrap_or_default();
         let mem = InMemoryStore::new();
         let mut max_seq_per_ns: std::collections::HashMap<String, u64> = Default::default();
         for r in recs {
             match r {
-                RecBody::Put { ns, obj } => {
-                    if let Ok(mut o) = serde_json::from_value::<Object>(obj) {
+                RecBody::Put { ns: _, obj } => {
+                    if let Ok(o) = serde_json::from_value::<Object>(obj) {
                         // Track per-ns commit seq
                         max_seq_per_ns
                             .entry(o.ns.clone())
@@ -50,7 +50,7 @@ impl PersistentStore {
         }
         Ok(Self {
             mem,
-            wal: parking_lot::Mutex::new(wal),
+            wal: parking_lot::Mutex::new(wal_writer),
             manifest: parking_lot::RwLock::new(manifest),
             data_dir,
             idem: parking_lot::RwLock::new(std::collections::HashMap::new()),
@@ -83,7 +83,7 @@ impl PersistentStore {
     }
 }
 
-#[async_trait::async_trait]
+#[async_trait::async_trait(?Send)]
 impl Storage for PersistentStore {
     async fn put(&self, ns: &str, req: PutRequest) -> Result<Object> {
         let o = self.mem.put(ns, req).await?;

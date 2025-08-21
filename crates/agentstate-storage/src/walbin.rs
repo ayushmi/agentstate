@@ -271,7 +271,7 @@ impl WalHandle {
         while let Some(first) = rx.recv().await {
             let mut batch = vec![first];
             let mut bytes = batch[0].rec.len();
-            let mut deadline = tokio::time::sleep(Duration::from_millis(batch_ms));
+            let deadline = tokio::time::sleep(Duration::from_millis(batch_ms));
             tokio::pin!(deadline);
             loop {
                 tokio::select! {

@@ -21,7 +21,7 @@ mod metrics;
 use futures::Stream;
 use hmac::{Hmac, Mac};
 use sha2::Sha256;
-use std::path::Path;
+use std::path::Path as StdPath;
 use std::pin::Pin;
 use tonic::{transport::Server as GrpcServer, Request, Response, Status};
 
@@ -276,8 +276,8 @@ async fn main() -> anyhow::Result<()> {
     Ok(())
 }
 
-fn dir_size(path: impl AsRef<Path>) -> u64 {
-    fn walk(p: &Path, acc: &mut u64) {
+fn dir_size(path: impl AsRef<StdPath>) -> u64 {
+    fn walk(p: &StdPath, acc: &mut u64) {
         if let Ok(md) = std::fs::metadata(p) {
             if md.is_file() {
                 *acc += md.len();
@@ -717,7 +717,7 @@ async fn admin_explain_query(
         "plan": plan,
         "estimated_cost": {"cpu_ms": 7.2, "io_reads": 34},
         "indexes_hit": plan.iter().filter_map(|p| p.get("index")).collect::<Vec<_>>(),
-        "warnings": [] as [String;0],
+        "warnings": Vec::<String>::new(),
     });
     let micros = t0.elapsed().as_micros() as f64;
     metrics::QUERY_PLANNER_MICROS.observe(micros);

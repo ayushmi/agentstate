@@ -164,7 +164,7 @@ impl InMemoryStore {
     }
 }
 
-#[async_trait::async_trait]
+#[async_trait::async_trait(?Send)]
 impl Storage for InMemoryStore {
     async fn put(&self, ns: &str, req: PutRequest) -> Result<Object> {
         let mut inner = self.inner.write();
@@ -185,9 +185,10 @@ impl Storage for InMemoryStore {
                 .or_default()
                 .insert(obj.id.clone(), ());
         }
-        if let Some(paths) = inner.json_index_paths.get(&obj.ns) {
+        let paths_to_index = inner.json_index_paths.get(&obj.ns).cloned();
+        if let Some(paths) = paths_to_index {
             for p in paths {
-                if let Some(val) = obj.body.pointer(&json_pointer_from_path(p)) {
+                if let Some(val) = obj.body.pointer(&json_pointer_from_path(&p)) {
                     let key = (obj.ns.clone(), p.clone(), val.to_string());
                     inner
                         .json_index
@@ -437,11 +438,14 @@ impl Storage for InMemoryStore {
             .leases
             .get(&(ns.to_string(), key.to_string()))
             .cloned();
-        let token = inner
-            .commit_seq
-            .entry(ns.to_string())
-            .and_modify(|c| *c += 1)
-            .or_insert(1);
+        let token = {
+            let token_ref = inner
+                .commit_seq
+                .entry(ns.to_string())
+                .and_modify(|c| *c += 1)
+                .or_insert(1);
+            *token_ref
+        };
         if let Some((cur_owner, _tok, cur_exp)) = entry {
             if cur_exp > now && cur_owner != owner {
                 return Err(StateError::Conflict("lease held".into()));
@@ -449,13 +453,13 @@ impl Storage for InMemoryStore {
         }
         inner.leases.insert(
             (ns.to_string(), key.to_string()),
-            (owner.to_string(), *token, expires),
+            (owner.to_string(), token, expires),
         );
         Ok(crate::traits::Lease {
             ns: ns.to_string(),
             key: key.to_string(),
             owner: owner.to_string(),
-            token: *token,
+            token: token,
             expires_at: expires,
         })
     }
@@ -663,9 +667,10 @@ impl InMemoryStore {
                 set.remove(&obj.id);
             }
         }
-        if let Some(paths) = inner.json_index_paths.get(&obj.ns) {
+        let paths_to_cleanup = inner.json_index_paths.get(&obj.ns).cloned();
+        if let Some(paths) = paths_to_cleanup {
             for p in paths {
-                if let Some(val) = obj.body.pointer(&json_pointer_from_path(p)) {
+                if let Some(val) = obj.body.pointer(&json_pointer_from_path(&p)) {
                     if let Some(set) =
                         inner
                             .json_index
