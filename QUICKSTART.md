@@ -79,7 +79,7 @@ bot = client.create_agent(
     type="chatbot",
     body={
         "name": "CustomerBot",
-        "model": "gpt-4",
+        "model": "llm-model-v1",
         "status": "active",
         "conversations_today": 0
     },
@@ -100,7 +100,7 @@ updated = client.create_agent(
     type="chatbot",
     body={
         "name": "CustomerBot", 
-        "model": "gpt-4",
+        "model": "llm-model-v1",
         "status": "busy",
         "conversations_today": 5,
         "current_user": "john@example.com"

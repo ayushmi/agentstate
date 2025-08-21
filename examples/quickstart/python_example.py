@@ -92,7 +92,7 @@ def main():
             agent_type="chatbot",
             body={
                 "name": "CustomerSupportBot",
-                "model": "gpt-4",
+                "model": "llm-model-v1",
                 "temperature": 0.7,
                 "status": "active",
                 "current_conversation": None,
@@ -137,7 +137,7 @@ def main():
             agent_id=chatbot_id,  # Update existing agent
             body={
                 "name": "CustomerSupportBot",
-                "model": "gpt-4",
+                "model": "llm-model-v1",
                 "temperature": 0.7,
                 "status": "busy",
                 "current_conversation": "conv_12345",
