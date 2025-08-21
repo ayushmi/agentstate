@@ -14,12 +14,31 @@ import os
 import time
 from typing import Dict, Any, List, Optional
 from agentstate import AgentStateClient
-from langchain.memory import BaseChatMessageHistory
-from langchain.schema import BaseMessage, HumanMessage, AIMessage
-from langchain_openai import ChatOpenAI
-from langchain.agents import AgentExecutor, create_openai_functions_agent
-from langchain.tools import Tool
-from langchain.prompts import ChatPromptTemplate, MessagesPlaceholder
+try:
+    from langchain_core.chat_history import BaseChatMessageHistory
+    from langchain_core.messages import BaseMessage, HumanMessage, AIMessage
+except ImportError:
+    from langchain.memory import BaseChatMessageHistory
+    from langchain.schema import BaseMessage, HumanMessage, AIMessage
+
+try:
+    from langchain_openai import ChatOpenAI
+except ImportError:
+    from langchain.llms import OpenAI as ChatOpenAI
+
+try:
+    from langchain.agents import AgentExecutor, create_openai_functions_agent
+    from langchain.tools import Tool
+    from langchain.prompts import ChatPromptTemplate, MessagesPlaceholder
+except ImportError:
+    # Fallback for older versions
+    from langchain.agents import initialize_agent, Tool
+    from langchain.prompts import PromptTemplate
+    AgentExecutor = None
+    create_openai_functions_agent = None
+    ChatPromptTemplate = None
+    MessagesPlaceholder = None
+
 from pydantic import BaseModel
 
 
@@ -35,7 +54,7 @@ class AgentStateMemory(BaseChatMessageHistory):
         """Ensure the agent exists in AgentState"""
         try:
             self.client.get_agent(self.agent_id)
-        except:
+        except Exception:
             # Create agent if it doesn't exist
             self.client.create_agent(
                 agent_type="langchain-agent",
