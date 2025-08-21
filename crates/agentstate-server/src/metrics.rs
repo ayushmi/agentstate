@@ -59,3 +59,11 @@ pub static QUERY_PLANNER_MICROS: Lazy<Histogram> = Lazy::new(|| {
 
 pub static WATCH_CLIENTS: Lazy<GaugeVec> =
     Lazy::new(|| register_gauge_vec!("watch_clients", "Active watch clients", &["proto"]).unwrap());
+
+pub static WATCH_EVENTS_TOTAL: Lazy<CounterVec> = Lazy::new(|| {
+    register_counter_vec!("watch_events_total", "Watch events emitted", &["type"]).unwrap()
+});
+
+pub static WATCH_RESUMES_TOTAL: Lazy<CounterVec> = Lazy::new(|| {
+    register_counter_vec!("watch_resumes_total", "Watch resumes", &["proto"]).unwrap()
+});

@@ -36,7 +36,7 @@ tokio-stream = "0.1"
 tokio-util = { version = "0.7", features = ["rt"] }
 parking_lot = "0.12"
 async-trait = "0.1"
-tonic = { version = "0.11", features = ["transport"] }
+tonic = { version = "0.11", features = ["transport", "tls", "tls-roots"] }
 prost = "0.12"
 prost-types = "0.12"
 async-stream = "0.3"
@@ -45,7 +45,8 @@ zstd = { version = "0.13", features = ["zstdmt"] }
 ciborium = { version = "0.2", features = ["std"] }
 serde_cbor = "0.11"
 prometheus = "0.13"
-opentelemetry = { version = "0.23", features = ["rt-tokio"] }
+opentelemetry = "0.23"
+opentelemetry_sdk = { version = "0.23", features = ["rt-tokio"] }
 tracing-opentelemetry = "0.24"
 opentelemetry-otlp = { version = "0.16", features = ["grpc-tonic"] }
 once_cell = "1.19"

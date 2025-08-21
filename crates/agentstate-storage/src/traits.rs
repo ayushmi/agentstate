@@ -22,7 +22,7 @@ pub enum WatchEvent {
     },
 }
 
-#[async_trait::async_trait(?Send)]
+#[async_trait::async_trait]
 pub trait Storage: Send + Sync + 'static {
     async fn put(&self, ns: &str, req: PutRequest) -> Result<Object>;
     async fn get(&self, ns: &str, id: &str, opts: GetOptions) -> Result<Object>;
@@ -70,10 +70,17 @@ pub trait Storage: Send + Sync + 'static {
     async fn admin_snapshot(&self) -> Result<(String, u64)>;
     async fn admin_manifest(&self) -> Result<serde_json::Value>;
     async fn admin_trim_wal(&self, snapshot_id: &str) -> Result<Vec<String>>;
-
-    fn as_any(&self) -> &dyn std::any::Any where Self: Sized {
-        self
+    
+    // Backlog monitoring
+    fn backlog_map(&self) -> std::collections::HashMap<String, u64> {
+        Default::default()
     }
+    
+    // Export all objects (for admin dump)
+    fn all_objects(&self) -> Vec<Object> {
+        Vec::new()
+    }
+
 }
 
 pub trait WatchHandle: Send {

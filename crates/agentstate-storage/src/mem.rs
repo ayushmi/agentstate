@@ -164,7 +164,7 @@ impl InMemoryStore {
     }
 }
 
-#[async_trait::async_trait(?Send)]
+#[async_trait::async_trait]
 impl Storage for InMemoryStore {
     async fn put(&self, ns: &str, req: PutRequest) -> Result<Object> {
         let mut inner = self.inner.write();
@@ -398,29 +398,36 @@ impl Storage for InMemoryStore {
 
     async fn sweep_expired(&self, _retention_secs: u64) -> Result<u64> {
         let now = Utc::now();
-        let mut inner = self.inner.write();
-        let mut removed = 0u64;
-        let keys: Vec<(String, String)> = inner.data.keys().cloned().collect();
-        for k in keys {
-            if let Some(vec) = inner.data.get_mut(&k) {
-                if let Some(last) = vec.last() {
-                    if last
-                        .ttl_seconds
-                        .map(|t| last.ts + Duration::seconds(t as i64) < now)
-                        .unwrap_or(false)
-                    {
-                        let dead = vec.last().cloned();
-                        inner.data.remove(&k);
-                        if let Some(o) = dead {
-                            removed += 1;
-                            drop(inner);
-                            self.cleanup_indexes_for(&o).await;
-                            inner = self.inner.write();
+        let mut objects_to_cleanup = Vec::new();
+        
+        // First pass: identify and remove expired objects
+        {
+            let mut inner = self.inner.write();
+            let keys: Vec<(String, String)> = inner.data.keys().cloned().collect();
+            for k in keys {
+                if let Some(vec) = inner.data.get_mut(&k) {
+                    if let Some(last) = vec.last() {
+                        if last
+                            .ttl_seconds
+                            .map(|t| last.ts + Duration::seconds(t as i64) < now)
+                            .unwrap_or(false)
+                        {
+                            if let Some(dead) = vec.last().cloned() {
+                                inner.data.remove(&k);
+                                objects_to_cleanup.push(dead);
+                            }
                         }
                     }
                 }
             }
+        } // inner lock is dropped here
+        
+        // Second pass: cleanup indexes (can be async)
+        let removed = objects_to_cleanup.len() as u64;
+        for obj in objects_to_cleanup {
+            self.cleanup_indexes_for(&obj).await;
         }
+        
         Ok(removed)
     }
 
@@ -567,10 +574,36 @@ impl Storage for InMemoryStore {
     async fn admin_trim_wal(&self, _snapshot_id: &str) -> Result<Vec<String>> {
         Err(StateError::Invalid("not persistent".into()))
     }
-
-    fn as_any(&self) -> &dyn std::any::Any {
-        self
+    
+    fn backlog_map(&self) -> std::collections::HashMap<String, u64> {
+        let inner = self.inner.read();
+        let mut map: std::collections::HashMap<String, u64> = std::collections::HashMap::new();
+        for (ns, bufs) in inner.buffers.iter() {
+            let mut maxv = 0usize;
+            for b in bufs.iter() {
+                let c = *b.cursor.read();
+                let len = b.events.read().len();
+                let backlog = len.saturating_sub(c);
+                if backlog > maxv {
+                    maxv = backlog;
+                }
+            }
+            map.insert(ns.clone(), maxv as u64);
+        }
+        map
     }
+    
+    fn all_objects(&self) -> Vec<Object> {
+        let inner = self.inner.read();
+        let mut objects = Vec::new();
+        for vectors in inner.data.values() {
+            if let Some(latest) = vectors.last() {
+                objects.push(latest.clone());
+            }
+        }
+        objects
+    }
+
 }
 
 struct MemWatch {

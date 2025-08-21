@@ -3,12 +3,13 @@ use crate::{InMemoryStore, Storage};
 use agentstate_core::{Object, PutRequest, QueryRequest, Result, StateError};
 use chrono::Utc;
 use std::{io::Write, path::PathBuf};
+use tokio::sync::Mutex;
 use ulid;
 use zstd;
 
 pub struct PersistentStore {
     mem: InMemoryStore,
-    wal: parking_lot::Mutex<WalWriter>,
+    wal: Mutex<WalWriter>,
     manifest: parking_lot::RwLock<Manifest>,
     data_dir: PathBuf,
     idem: parking_lot::RwLock<
@@ -50,7 +51,7 @@ impl PersistentStore {
         }
         Ok(Self {
             mem,
-            wal: parking_lot::Mutex::new(wal_writer),
+            wal: Mutex::new(wal_writer),
             manifest: parking_lot::RwLock::new(manifest),
             data_dir,
             idem: parking_lot::RwLock::new(std::collections::HashMap::new()),
@@ -83,12 +84,12 @@ impl PersistentStore {
     }
 }
 
-#[async_trait::async_trait(?Send)]
+#[async_trait::async_trait]
 impl Storage for PersistentStore {
     async fn put(&self, ns: &str, req: PutRequest) -> Result<Object> {
         let o = self.mem.put(ns, req).await?;
         {
-            let wal = self.wal.lock();
+            let wal = self.wal.lock().await;
             let body = RecBody::Put {
                 ns: o.ns.clone(),
                 obj: serde_json::to_value(&o).unwrap(),
@@ -115,7 +116,7 @@ impl Storage for PersistentStore {
             ns: ns.to_string(),
             id: id.to_string(),
         };
-        let wal = self.wal.lock();
+        let wal = self.wal.lock().await;
         wal.append(0, now, &body)
             .await
             .map_err(|e| StateError::Internal(e.to_string()))
@@ -142,7 +143,7 @@ impl Storage for PersistentStore {
     ) -> Result<crate::traits::Lease> {
         let l = self.mem.lease_acquire(ns, key, owner, ttl_secs).await?;
         {
-            let wal = self.wal.lock();
+            let wal = self.wal.lock().await;
             wal.append(
                 0,
                 Utc::now().timestamp(),
@@ -172,7 +173,7 @@ impl Storage for PersistentStore {
             .lease_renew(ns, key, owner, token, ttl_secs)
             .await?;
         {
-            let wal = self.wal.lock();
+            let wal = self.wal.lock().await;
             wal.append(
                 0,
                 Utc::now().timestamp(),
@@ -191,7 +192,7 @@ impl Storage for PersistentStore {
     }
     async fn lease_release(&self, ns: &str, key: &str, owner: &str, token: u64) -> Result<()> {
         self.mem.lease_release(ns, key, owner, token).await?;
-        let wal = self.wal.lock();
+        let wal = self.wal.lock().await;
         wal.append(
             0,
             Utc::now().timestamp(),
@@ -244,7 +245,7 @@ impl Storage for PersistentStore {
         self.idem
             .write()
             .insert((ns.to_string(), key.to_string()), rec.clone());
-        let wal = self.wal.lock();
+        let wal = self.wal.lock().await;
         wal.append(
             0,
             Utc::now().timestamp(),

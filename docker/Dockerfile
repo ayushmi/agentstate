@@ -1,4 +1,5 @@
-FROM rust:1.79 as builder
+FROM rust:1.81 as builder
+RUN apt-get update && apt-get install -y protobuf-compiler && rm -rf /var/lib/apt/lists/*
 WORKDIR /app
 COPY . .
 RUN cargo build --release -p agentstate-server

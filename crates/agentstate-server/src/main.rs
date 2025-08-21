@@ -5,10 +5,13 @@ use axum::{
     extract::{Path, Query, State},
     http::HeaderMap,
     response::IntoResponse,
-    routing::{delete, get, post},
+    routing::{get, post},
     Json, Router,
 };
 use once_cell::sync::Lazy;
+use opentelemetry_sdk;
+use opentelemetry_otlp::WithExportConfig;
+use tracing_subscriber::prelude::*;
 use prometheus::{
     Encoder, HistogramVec, IntCounter, IntCounterVec, IntGaugeVec, Registry, TextEncoder,
 };
@@ -18,12 +21,14 @@ use std::sync::Arc;
 use tower_http::cors::{Any, CorsLayer};
 use tracing::{info, Level};
 mod metrics;
+use metrics::{WATCH_CLIENTS, WATCH_EVENTS_TOTAL, WATCH_RESUMES_TOTAL};
 use futures::Stream;
 use hmac::{Hmac, Mac};
 use sha2::Sha256;
+use axum::body::Bytes;
 use std::path::Path as StdPath;
 use std::pin::Pin;
-use tonic::{transport::Server as GrpcServer, Request, Response, Status};
+use tonic::{transport::Server as GrpcServer, Request, Response as TonicResponse, Status};
 
 #[derive(Clone)]
 struct AppState {
@@ -51,7 +56,7 @@ async fn main() -> anyhow::Result<()> {
                     .tonic()
                     .with_endpoint(endpoint),
             )
-            .install_batch(opentelemetry::runtime::Tokio)
+            .install_batch(opentelemetry_sdk::runtime::Tokio)
             .ok();
         if let Some(tracer) = tracer {
             let telemetry = tracing_opentelemetry::layer().with_tracer(tracer);
@@ -88,6 +93,11 @@ async fn main() -> anyhow::Result<()> {
         idem: Arc::new(parking_lot::RwLock::new(std::collections::HashMap::new())),
         qps: Arc::new(parking_lot::RwLock::new(std::collections::HashMap::new())),
     };
+    
+    let store_for_backlog = state.store.clone();
+    let sweeper_state = state.clone();
+    let snapshot_state = state.clone();
+    let grpc_state = state.clone();
 
     // Metrics registry (MVP)
     static REGISTRY: Lazy<Registry> = Lazy::new(Registry::new);
@@ -96,7 +106,7 @@ async fn main() -> anyhow::Result<()> {
     });
     static OP_DURATION: Lazy<HistogramVec> = Lazy::new(|| {
         HistogramVec::new(
-            prometheus::opts!("op_duration_seconds", "op durations"),
+            prometheus::opts!("op_duration_seconds", "op durations").into(),
             &["op"],
         )
         .unwrap()
@@ -169,7 +179,6 @@ async fn main() -> anyhow::Result<()> {
     info!("grpc listening on {}", grpc_addr);
 
     // TTL sweeper
-    let sweeper_state = state.clone();
     tokio::spawn(async move {
         loop {
             let _ = sweeper_state.store.sweep_expired(0).await; // retention window unused in mem engine
@@ -179,7 +188,6 @@ async fn main() -> anyhow::Result<()> {
 
     // Snapshotter (if persistent store)
     if std::env::var("DATA_DIR").is_ok() {
-        let snapshot_state = state.clone();
         tokio::spawn(async move {
             loop {
                 // downcast to PersistentStore via Any is non-trivial; call via HTTP admin in future.
@@ -203,19 +211,13 @@ async fn main() -> anyhow::Result<()> {
             }
         });
         // Backlog gauge updater (for InMemoryStore)
-        let store_for_backlog = state.store.clone();
         tokio::spawn(async move {
             loop {
-                if let Some(mem) = store_for_backlog
-                    .as_any()
-                    .downcast_ref::<agentstate_storage::InMemoryStore>()
-                {
-                    let map = mem.backlog_map();
-                    for (ns, v) in map {
-                        metrics::WATCH_BACKLOG_EVENTS
-                            .with_label_values(&[&ns])
-                            .set(v as f64);
-                    }
+                let map = store_for_backlog.backlog_map();
+                for (ns, v) in &map {
+                    metrics::WATCH_BACKLOG_EVENTS
+                        .with_label_values(&[ns])
+                        .set(*v as f64);
                 }
                 tokio::time::sleep(std::time::Duration::from_secs(2)).await;
             }
@@ -237,7 +239,7 @@ async fn main() -> anyhow::Result<()> {
         })
     } else {
         tokio::spawn(async move {
-            axum::Server::bind(&http_addr)
+            axum_server::bind(http_addr)
                 .serve(app.into_make_service())
                 .await
                 .unwrap();
@@ -245,7 +247,7 @@ async fn main() -> anyhow::Result<()> {
     };
     let grpc = {
         let svc = AgentStateGrpc {
-            state: state.clone(),
+            state: grpc_state,
         };
         let mut builder = GrpcServer::builder();
         if use_tls {
@@ -307,10 +309,10 @@ async fn put_objects(
 ) -> impl IntoResponse {
     let claims = match enforce_caps(&headers, &ns, "put") {
         Ok(c) => c,
-        Err(resp) => return resp,
+        Err(resp) => return resp.into_response(),
     };
     if let Err(resp) = rate_limit(&app, &claims) {
-        return resp;
+        return resp.into_response();
     }
     // Region pin
     if let Some(reg) = claims.get("region").and_then(|v| v.as_str()) {
@@ -363,7 +365,7 @@ async fn put_objects(
         // local static
         static OP_DURATION: Lazy<HistogramVec> = Lazy::new(|| {
             HistogramVec::new(
-                prometheus::opts!("op_duration_seconds", "op durations"),
+                prometheus::opts!("op_duration_seconds", "op durations").into(),
                 &["op"],
             )
             .unwrap()
@@ -441,12 +443,12 @@ async fn get_object(
     headers: HeaderMap,
 ) -> impl IntoResponse {
     if let Err(resp) = enforce_caps(&headers, &ns, "get") {
-        return resp;
+        return resp.into_response();
     }
     let _timer = {
         static OP_DURATION: Lazy<HistogramVec> = Lazy::new(|| {
             HistogramVec::new(
-                prometheus::opts!("op_duration_seconds", "op durations"),
+                prometheus::opts!("op_duration_seconds", "op durations").into(),
                 &["op"],
             )
             .unwrap()
@@ -480,7 +482,7 @@ async fn delete_object(
     headers: HeaderMap,
 ) -> impl IntoResponse {
     if let Err(resp) = enforce_caps(&headers, &ns, "delete") {
-        return resp;
+        return resp.into_response();
     }
     match app.store.delete(&ns, &id).await {
         Ok(_) => (StatusCode::NO_CONTENT).into_response(),
@@ -491,16 +493,16 @@ async fn delete_object(
 async fn query(
     State(app): State<AppState>,
     Path(ns): Path<String>,
-    Json(req): Json<QueryRequest>,
     headers: HeaderMap,
+    Json(req): Json<QueryRequest>,
 ) -> impl IntoResponse {
     if let Err(resp) = enforce_caps(&headers, &ns, "query") {
-        return resp;
+        return resp.into_response();
     }
     let _timer = {
         static OP_DURATION: Lazy<HistogramVec> = Lazy::new(|| {
             HistogramVec::new(
-                prometheus::opts!("op_duration_seconds", "op durations"),
+                prometheus::opts!("op_duration_seconds", "op durations").into(),
                 &["op"],
             )
             .unwrap()
@@ -530,7 +532,7 @@ async fn watch_sse(
     headers: HeaderMap,
 ) -> impl IntoResponse {
     if let Err(resp) = enforce_caps(&headers, &ns, "watch") {
-        return resp;
+        return resp.into_response();
     }
     // Manual SSE stream with decrement on drop
     struct ClientGuard(&'static str);
@@ -563,7 +565,7 @@ async fn watch_sse(
             } else if let Some(ev) = handle.try_next() {
                 match ev {
                     agentstate_storage::traits::WatchEvent::Put(o) => {
-                        WATCH_EVENTS_TOTAL.inc();
+                        WATCH_EVENTS_TOTAL.with_label_values(&["put"]).inc();
                         let lag = (chrono::Utc::now() - o.ts).num_milliseconds() as f64 / 1000.0;
                         metrics::WATCH_EMIT_LAG_SEC.observe(lag.max(0.0));
                         let payload = serde_json::to_string(&json!({"type":"put","obj":o,"commit_seq":o.commit_seq})).unwrap();
@@ -571,7 +573,7 @@ async fn watch_sse(
                         yield Ok::<Bytes, std::io::Error>(Bytes::from(chunk));
                     }
                     agentstate_storage::traits::WatchEvent::Delete{ns,id,commit_seq} => {
-                        WATCH_EVENTS_TOTAL.inc();
+                        WATCH_EVENTS_TOTAL.with_label_values(&["put"]).inc();
                         let payload = serde_json::to_string(&json!({"type":"delete","ns":ns,"id":id,"commit_seq":commit_seq})).unwrap();
                         let chunk = format!("id: {}\ndata: {}\n\n", commit_seq, payload);
                         yield Ok::<Bytes, std::io::Error>(Bytes::from(chunk));
@@ -582,7 +584,7 @@ async fn watch_sse(
             }
         }
     };
-    Response::builder()
+    axum::http::Response::builder()
         .header(axum::http::header::CONTENT_TYPE, "text/event-stream")
         .header(axum::http::header::CACHE_CONTROL, "no-cache")
         .body(axum::body::Body::from_stream(s))
@@ -600,7 +602,7 @@ async fn metrics() -> impl IntoResponse {
 // Admin endpoints
 async fn admin_snapshot(State(app): State<AppState>, headers: HeaderMap) -> impl IntoResponse {
     if let Err(resp) = enforce_caps(&headers, "admin://global", "admin") {
-        return resp;
+        return resp.into_response();
     }
     let t0 = std::time::Instant::now();
     match app.store.admin_snapshot().await {
@@ -626,7 +628,7 @@ async fn admin_snapshot(State(app): State<AppState>, headers: HeaderMap) -> impl
 }
 async fn admin_manifest(State(app): State<AppState>, headers: HeaderMap) -> impl IntoResponse {
     if let Err(resp) = enforce_caps(&headers, "admin://global", "admin") {
-        return resp;
+        return resp.into_response();
     }
     match app.store.admin_manifest().await {
         Ok(m) => {
@@ -642,13 +644,36 @@ async fn admin_manifest(State(app): State<AppState>, headers: HeaderMap) -> impl
             .into_response(),
     }
 }
+
+async fn admin_dump(State(app): State<AppState>, headers: HeaderMap) -> impl IntoResponse {
+    if let Err(resp) = enforce_caps(&headers, "admin://global", "admin") {
+        return resp.into_response();
+    }
+    match app.store.admin_snapshot().await {
+        Ok((snapshot_id, _)) => {
+            let mut response = String::new();
+            for obj in app.store.all_objects() {
+                if let Ok(json) = serde_json::to_string(&obj) {
+                    response.push_str(&json);
+                    response.push('\n');
+                }
+            }
+            (StatusCode::OK, response).into_response()
+        }
+        Err(e) => (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(json!({"error": e.to_string()}))
+        ).into_response(),
+    }
+}
+
 async fn admin_trim_wal(
     State(app): State<AppState>,
     q: Option<Query<std::collections::HashMap<String, String>>>,
     headers: HeaderMap,
 ) -> impl IntoResponse {
     if let Err(resp) = enforce_caps(&headers, "admin://global", "admin") {
-        return resp;
+        return resp.into_response();
     }
     let sid = q
         .and_then(|Query(m)| m.get("snapshot_id").cloned())
@@ -694,7 +719,7 @@ async fn admin_explain_query(
     Json(req): Json<ExplainReq>,
 ) -> impl IntoResponse {
     if let Err(resp) = enforce_caps(&headers, &req.ns, "admin") {
-        return resp;
+        return resp.into_response();
     }
     let t0 = std::time::Instant::now();
     let mut plan: Vec<serde_json::Value> = Vec::new();
@@ -748,11 +773,11 @@ struct LeaseReleaseReq {
 async fn lease_acquire(
     State(app): State<AppState>,
     Path(ns): Path<String>,
-    Json(req): Json<LeaseAcquireReq>,
     headers: HeaderMap,
+    Json(req): Json<LeaseAcquireReq>,
 ) -> impl IntoResponse {
     if let Err(resp) = enforce_caps(&headers, &ns, "lease") {
-        return resp;
+        return resp.into_response();
     }
     match app
         .store
@@ -770,11 +795,11 @@ async fn lease_acquire(
 async fn lease_renew(
     State(app): State<AppState>,
     Path(ns): Path<String>,
-    Json(req): Json<LeaseRenewReq>,
     headers: HeaderMap,
+    Json(req): Json<LeaseRenewReq>,
 ) -> impl IntoResponse {
     if let Err(resp) = enforce_caps(&headers, &ns, "lease") {
-        return resp;
+        return resp.into_response();
     }
     match app
         .store
@@ -792,11 +817,11 @@ async fn lease_renew(
 async fn lease_release(
     State(app): State<AppState>,
     Path(ns): Path<String>,
-    Json(req): Json<LeaseReleaseReq>,
     headers: HeaderMap,
+    Json(req): Json<LeaseReleaseReq>,
 ) -> impl IntoResponse {
     if let Err(resp) = enforce_caps(&headers, &ns, "lease") {
-        return resp;
+        return resp.into_response();
     }
     match app
         .store
@@ -823,7 +848,7 @@ impl agentstate_v1::agent_state_server::AgentState for AgentStateGrpc {
     async fn put(
         &self,
         request: Request<agentstate_v1::PutRequest>,
-    ) -> Result<Response<agentstate_v1::Object>, Status> {
+    ) -> Result<TonicResponse<agentstate_v1::Object>, Status> {
         let req = request.into_inner();
         let pr = PutRequest {
             r#type: req.r#type,
@@ -847,13 +872,13 @@ impl agentstate_v1::agent_state_server::AgentState for AgentStateGrpc {
             .put(&req.ns, pr)
             .await
             .map_err(|e| Status::internal(e.to_string()))?;
-        Ok(Response::new(to_proto_object(o)))
+        Ok(TonicResponse::new(to_proto_object(o)))
     }
 
     async fn get(
         &self,
         request: Request<agentstate_v1::GetRequest>,
-    ) -> Result<Response<agentstate_v1::Object>, Status> {
+    ) -> Result<TonicResponse<agentstate_v1::Object>, Status> {
         let req = request.into_inner();
         let o = self
             .state
@@ -865,13 +890,13 @@ impl agentstate_v1::agent_state_server::AgentState for AgentStateGrpc {
             )
             .await
             .map_err(|e| Status::not_found(e.to_string()))?;
-        Ok(Response::new(to_proto_object(o)))
+        Ok(TonicResponse::new(to_proto_object(o)))
     }
 
     async fn query(
         &self,
         request: Request<agentstate_v1::QueryRequest>,
-    ) -> Result<Response<agentstate_v1::QueryResponse>, Status> {
+    ) -> Result<TonicResponse<agentstate_v1::QueryResponse>, Status> {
         let req = request.into_inner();
         let tag_filter = if req.tag_json.is_empty() {
             None
@@ -882,9 +907,13 @@ impl agentstate_v1::agent_state_server::AgentState for AgentStateGrpc {
         };
         let qr = QueryRequest {
             tag_filter,
-            jsonpath: req.jsonpath.map(|s| agentstate_core::JsonPathFilter {
-                equals: Default::default(),
-            }),
+            jsonpath: if req.jsonpath.is_empty() {
+                None
+            } else {
+                Some(agentstate_core::JsonPathFilter {
+                    equals: std::collections::BTreeMap::from([("$".to_string(), serde_json::Value::String(req.jsonpath))]),
+                })
+            },
             vector: None,
             limit: None,
             fields: None,
@@ -895,7 +924,7 @@ impl agentstate_v1::agent_state_server::AgentState for AgentStateGrpc {
             .query(&req.ns, qr)
             .await
             .map_err(|e| Status::internal(e.to_string()))?;
-        Ok(Response::new(agentstate_v1::QueryResponse {
+        Ok(TonicResponse::new(agentstate_v1::QueryResponse {
             objects: list.into_iter().map(to_proto_object).collect(),
         }))
     }
@@ -903,21 +932,21 @@ impl agentstate_v1::agent_state_server::AgentState for AgentStateGrpc {
     async fn delete(
         &self,
         request: Request<agentstate_v1::DeleteRequest>,
-    ) -> Result<Response<agentstate_v1::Empty>, Status> {
+    ) -> Result<TonicResponse<agentstate_v1::Empty>, Status> {
         let req = request.into_inner();
         self.state
             .store
             .delete(&req.ns, &req.id)
             .await
             .map_err(|e| Status::not_found(e.to_string()))?;
-        Ok(Response::new(agentstate_v1::Empty {}))
+        Ok(TonicResponse::new(agentstate_v1::Empty {}))
     }
 
     type WatchStream = WatchStream;
     async fn watch(
         &self,
         request: Request<agentstate_v1::WatchRequest>,
-    ) -> Result<Response<Self::WatchStream>, Status> {
+    ) -> Result<TonicResponse<Self::WatchStream>, Status> {
         let req = request.into_inner();
         let mut handle = self.state.store.subscribe(
             agentstate_storage::traits::WatchFilter { ns: req.ns.clone() },
@@ -936,13 +965,13 @@ impl agentstate_v1::agent_state_server::AgentState for AgentStateGrpc {
                 } else if let Some(ev) = handle.try_next() {
                     match ev {
                         agentstate_storage::traits::WatchEvent::Put(o) => {
-                            WATCH_EVENTS_TOTAL.inc();
+                            WATCH_EVENTS_TOTAL.with_label_values(&["put"]).inc();
                             let lag = (chrono::Utc::now() - o.ts).num_milliseconds() as f64 / 1000.0;
                             metrics::WATCH_EMIT_LAG_SEC.observe(lag.max(0.0));
                             yield agentstate_v1::WatchEvent { r#type: "put".into(), obj: Some(to_proto_object(o.clone())), id: o.id.clone(), commit: o.commit_seq };
                         }
                         agentstate_storage::traits::WatchEvent::Delete{ns:_, id, commit_seq} => {
-                            WATCH_EVENTS_TOTAL.inc();
+                            WATCH_EVENTS_TOTAL.with_label_values(&["put"]).inc();
                             yield agentstate_v1::WatchEvent { r#type: "delete".into(), obj: None, id, commit: commit_seq };
                         }
                     }
@@ -951,7 +980,7 @@ impl agentstate_v1::agent_state_server::AgentState for AgentStateGrpc {
                 }
             }
         };
-        Ok(Response::new(Box::pin(output) as WatchStream))
+        Ok(TonicResponse::new(Box::pin(output) as WatchStream))
     }
 }
 
@@ -961,7 +990,7 @@ fn to_proto_object(o: agentstate_core::Object) -> agentstate_v1::Object {
         ns: o.ns,
         r#type: o.r#type,
         body_json: serde_json::to_string(&o.body).unwrap_or("null".into()),
-        tags: o.tags.0,
+        tags: o.tags.0.into_iter().collect(),
         ttl_seconds: o.ttl_seconds.unwrap_or_default() as u64,
         parents: o.parents,
         commit: o.commit,
