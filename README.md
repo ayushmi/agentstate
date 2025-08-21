@@ -1,15 +1,3 @@
-# AgentState Cloud (MVP Scaffold)
- 
-Agentic state cloud scaffold aiming at a Snowflake/Redis-level substrate for agent memory. This repo provides:
- 
-- Rust workspace: `core`, `storage`, `server` (HTTP JSON API)
-- SDKs: Python and TypeScript (MVP)
-- gRPC proto definitions (for future hot-paths)
-- Dockerfile and Compose for local run
-- Docs: quickstart, architecture, consistency semantics, Jepsen test plan
- 
-This is an MVP scaffold to enable rapid iteration. It favors a local, single-node in-memory engine with a clear separation layer to swap in durable engines.
- 
 # AgentState — Durable state for agents (Firebase-easy, prod-safe)
 
 Give your agent a persistent, typed object heap with watch streams and vector fields.
@@ -20,6 +8,57 @@ No Redis/Postgres glue. No custom queues. Just `state.put()`, `state.query()`, `
 - Idempotency + leases (fencing)
 - Capability tokens (size/QPS/region), TLS/mTLS
 - Helm, Grafana, `make verify` harness
+
+## 🚀 10-Minute Quickstart (Docker)
+
+```bash
+# Generate admin key
+openssl rand -base64 32
+
+# Run AgentState
+docker run -d --name agentstate \
+  -p 8080:8080 -p 9090:9090 \
+  -e CAP_KEY_ACTIVE=<your-generated-key> \
+  -v agentstate-data:/data \
+  ghcr.io/REPLACE_ORG/agentstate-server:v0.1.0-rc.1
+
+# Test it works
+curl http://localhost:8080/health
+```
+
+**Python Example:**
+```python
+import agentstate
+client = agentstate.Client("http://localhost:8080")
+obj = client.put("agent://demo", {"status": "ready"})
+for event in client.watch("agent://demo"):
+    print(f"Got {event.type}: {event.body}")
+```
+
+**TypeScript Example:**
+```typescript
+import { Client } from '@agentstate/client';
+const client = new Client('http://localhost:8080');
+const obj = await client.put('agent://demo', {status: 'ready'});
+for await (const event of client.watch('agent://demo')) {
+  console.log(`Got ${event.type}:`, event.body);
+}
+```
+
+## 📚 Documentation
+
+- **[Deployment Guide](docs/DEPLOY.md)** - Docker & Kubernetes setup  
+- **[Compatibility Matrix](docs/compatibility.md)** - Supported environments
+- **[Architecture](docs/architecture.md)** - System design and consistency
+- **[Grafana Dashboard](deploy/grafana/agentstate-dashboard.json)** - Monitoring setup
+
+## 🎯 Helm Installation
+
+```bash
+helm upgrade --install agentstate oci://ghcr.io/REPLACE_ORG/charts/agentstate \
+  --set env.CAP_KEY_ACTIVE=<your-key> \
+  --set persistence.enabled=true
+```
 
 ## Quickstart (local)
  

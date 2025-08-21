@@ -1,21 +1,52 @@
-replicaCount: 3
+replicaCount: 1
 image:
-  repository: agentstate/server
-  tag: latest
+  repository: ghcr.io/REPLACE_ORG/agentstate-server
+  tag: v0.1.0-rc.1
   pullPolicy: IfNotPresent
+
 service:
   type: ClusterIP
   portHttp: 8080
-  portGrpc: 9090
+  portMetrics: 9090
+
 resources:
   limits:
     cpu: 500m
     memory: 512Mi
   requests:
-    cpu: 250m
-    memory: 256Mi
+    cpu: 100m
+    memory: 128Mi
+
 persistence:
   enabled: true
   size: 10Gi
+  storageClass: ""
+
 env:
-  AGENTSTATE_SECRET: ""
+  DATA_DIR: "/data"
+  REGION: "us-west-2"
+  DEV_MODE: "false"
+
+# Security: Store sensitive values in Kubernetes secrets  
+secrets:
+  CAP_KEY_ACTIVE_ID: "active"
+  CAP_KEY_ACTIVE: ""  # Set this to your base64-encoded key
+
+# TLS Configuration
+tls:
+  enabled: false
+  secretName: ""
+  certManager: false
+
+# Monitoring
+monitoring:
+  prometheus:
+    scrape: true
+  grafana:
+    dashboard: true
+
+# Ingress
+ingress:
+  enabled: false
+  hostname: ""
+  tls: false

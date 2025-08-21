@@ -5,4 +5,18 @@ services:
       context: .
       dockerfile: docker/Dockerfile
     ports:
-      - "8080:8080"
+      - "8080:8080"     # HTTP API
+      - "9090:9090"     # Metrics/Admin
+    environment:
+      DATA_DIR: /data
+      DEV_MODE: "1" 
+      REGION: "us-west-2"
+      CAP_KEY_ACTIVE_ID: "active"
+      CAP_KEY_ACTIVE: "REPLACE_BASE64_KEY"  # Replace with actual key
+    volumes:
+      - "./data:/data"
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:8080/health || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3

@@ -2,5 +2,5 @@ apiVersion: v2
 name: agentstate
 description: AgentState cell (3-replica) with PVC and metrics
 type: application
-version: 0.1.0
-appVersion: "0.1.0"
+version: 0.1.0-rc.1
+appVersion: "0.1.0-rc.1"
