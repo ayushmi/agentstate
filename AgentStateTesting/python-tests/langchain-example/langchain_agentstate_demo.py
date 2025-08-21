@@ -187,52 +187,100 @@ class LangChainAgentStateDemo:
     """Demo class for LangChain + AgentState integration"""
     
     def __init__(self):
+        print("Initializing LangChain + AgentState Demo...")
+        
         # Initialize AgentState client
+        print("Connecting to AgentState...")
         self.agentstate = AgentStateClient(
             base_url=os.getenv('AGENTSTATE_URL', 'http://localhost:8080'),
             namespace='langchain-demo',
             api_key=os.getenv('AGENTSTATE_API_KEY')
         )
         
+        # Test AgentState connection
+        try:
+            health = self.agentstate.health_check()
+            if health:
+                print("✅ AgentState connection successful")
+            else:
+                print("⚠️ AgentState health check failed")
+        except Exception as e:
+            print(f"❌ AgentState connection failed: {e}")
+            raise
+        
         # Initialize OpenAI (requires OPENAI_API_KEY environment variable)
-        self.llm = ChatOpenAI(
-            model="gpt-3.5-turbo",
-            temperature=0.7
-        )
+        print("Initializing OpenAI LLM...")
+        try:
+            self.llm = ChatOpenAI(
+                model="gpt-3.5-turbo",
+                temperature=0.7
+            )
+            print("✅ OpenAI LLM initialized")
+        except Exception as e:
+            print(f"❌ Failed to initialize OpenAI LLM: {e}")
+            raise
         
         # Create tools
-        self.tools = [
-            create_calculator_tool(),
-            create_agent_coordination_tool(self.agentstate)
-        ]
+        print("Creating tools...")
+        try:
+            self.tools = [
+                create_calculator_tool(),
+                create_agent_coordination_tool(self.agentstate)
+            ]
+            print(f"✅ Created {len(self.tools)} tools")
+        except Exception as e:
+            print(f"❌ Failed to create tools: {e}")
+            raise
         
         self.agents = {}
+        print("✅ Demo initialization complete!")
     
-    def create_agent(self, agent_id: str, system_prompt: str) -> AgentExecutor:
+    def create_agent(self, agent_id: str, system_prompt: str):
         """Create a LangChain agent with AgentState memory"""
         
-        # Create AgentState-backed memory
-        memory = AgentStateMemory(agent_id, self.agentstate)
+        print(f"Creating agent: {agent_id}")
         
-        # Create prompt template
-        prompt = ChatPromptTemplate.from_messages([
-            ("system", system_prompt),
-            MessagesPlaceholder(variable_name="chat_history"),
-            ("human", "{input}"),
-            MessagesPlaceholder(variable_name="agent_scratchpad")
-        ])
-        
-        # Create agent
-        agent = create_openai_functions_agent(self.llm, self.tools, prompt)
-        agent_executor = AgentExecutor(
-            agent=agent,
-            tools=self.tools,
-            verbose=True,
-            memory=memory
-        )
-        
-        self.agents[agent_id] = agent_executor
-        return agent_executor
+        # Check if required components are available
+        if ChatPromptTemplate is None or create_openai_functions_agent is None or AgentExecutor is None:
+            print("❌ LangChain components not available. Please install langchain>=0.1.0")
+            print("This demo requires: langchain, langchain-core, langchain-openai")
+            return None
+            
+        try:
+            # Create AgentState-backed memory
+            print(f"Creating memory for {agent_id}")
+            memory = AgentStateMemory(agent_id, self.agentstate)
+            
+            # Create prompt template
+            print(f"Creating prompt template for {agent_id}")
+            prompt = ChatPromptTemplate.from_messages([
+                ("system", system_prompt),
+                MessagesPlaceholder(variable_name="chat_history"),
+                ("human", "{input}"),
+                MessagesPlaceholder(variable_name="agent_scratchpad")
+            ])
+            
+            # Create agent
+            print(f"Creating LangChain agent for {agent_id}")
+            agent = create_openai_functions_agent(self.llm, self.tools, prompt)
+            
+            print(f"Creating agent executor for {agent_id}")
+            agent_executor = AgentExecutor(
+                agent=agent,
+                tools=self.tools,
+                verbose=True,
+                memory=memory
+            )
+            
+            self.agents[agent_id] = agent_executor
+            print(f"✅ Successfully created agent: {agent_id}")
+            return agent_executor
+            
+        except Exception as e:
+            print(f"❌ Error creating agent {agent_id}: {e}")
+            import traceback
+            traceback.print_exc()
+            return None
     
     def run_multi_agent_demo(self):
         """Run a demo with multiple coordinating agents"""
@@ -240,17 +288,27 @@ class LangChainAgentStateDemo:
         print("=" * 50)
         
         # Create two specialized agents
+        print("Creating math agent...")
         math_agent = self.create_agent(
             "math-specialist",
             "You are a mathematics specialist. Help with calculations and math problems. "
             "Use the Calculator tool for computations. You can also coordinate with other agents."
         )
         
+        if math_agent is None:
+            print("❌ Failed to create math agent. Stopping demo.")
+            return
+        
+        print("Creating coordinator agent...")
         coord_agent = self.create_agent(
             "coordinator",
             "You are a coordinator agent. Your job is to help organize tasks and coordinate "
             "between different agents. Use the AgentCoordination tool to communicate with other agents."
         )
+        
+        if coord_agent is None:
+            print("❌ Failed to create coordinator agent. Stopping demo.")
+            return
         
         print("\n📊 Math Agent solving a problem:")
         math_response = math_agent.invoke({
