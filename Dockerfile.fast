@@ -1,0 +1,5 @@
+FROM gcr.io/distroless/cc-debian12
+COPY ./target/release/agentstate-server /agentstate-server
+EXPOSE 8080
+EXPOSE 9090
+ENTRYPOINT ["/agentstate-server"]
