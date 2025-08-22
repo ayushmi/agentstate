@@ -34,6 +34,16 @@ docker run -p 8080:8080 -p 9090:9090 \
 curl http://localhost:8080/health
 ```
 
+Authentication in local dev (using docker-compose defaults): generate a dev token and export it as `AGENTSTATE_API_KEY`.
+
+```bash
+export AGENTSTATE_API_KEY=$(python scripts/generate_cap_token.py \
+  --kid "${CAP_KEY_ACTIVE_ID:-active}" \
+  --secret "${CAP_KEY_ACTIVE:-dev-secret}" \
+  --ns my-app \
+  --verb put --verb get --verb delete --verb query --verb lease)
+```
+
 ### 2. Use in Your Application
 
 **Python:**

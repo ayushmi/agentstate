@@ -295,7 +295,9 @@ impl WalHandle {
                     meta.max_seq = meta.max_seq.max(last_seq);
                 }
                 let _ = inner.segment.file.flush();
-                let _ = inner.segment.file.sync_all();
+                // Use sync_data instead of sync_all for better performance
+                // sync_data only syncs file data, not metadata, which is faster
+                let _ = inner.segment.file.sync_data();
                 WAL_FSYNC_TOTAL.inc();
                 WAL_FSYNC_SECONDS.observe(t0.elapsed().as_secs_f64());
                 WAL_BATCH_BYTES.observe(bytes as f64);

@@ -11,8 +11,10 @@ services:
       DATA_DIR: /data
       DEV_MODE: "1" 
       REGION: "us-west-2"
-      CAP_KEY_ACTIVE_ID: "active"
-      CAP_KEY_ACTIVE: "REPLACE_BASE64_KEY"  # Replace with actual key
+      # Capability keys (HMAC). For local dev we default to a simple secret.
+      # Override via shell env or a .env file if desired.
+      CAP_KEY_ACTIVE_ID: ${CAP_KEY_ACTIVE_ID:-active}
+      CAP_KEY_ACTIVE: ${CAP_KEY_ACTIVE:-dev-secret}
     volumes:
       - "./data:/data"
     healthcheck:

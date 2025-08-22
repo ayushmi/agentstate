@@ -43,6 +43,31 @@ pip install requests  # AgentState uses standard HTTP APIs
 npm install axios     # AgentState uses standard HTTP APIs
 ```
 
+### 2.5 Local Auth (Dev Token)
+
+When running via our `docker-compose.yml`, capability enforcement is enabled by default with a local dev secret. Generate a token and export it as `AGENTSTATE_API_KEY`:
+
+```bash
+# Optional: copy defaults
+cp .env.example .env  # contains CAP_KEY_ACTIVE=dev-secret
+
+# Generate token for the example namespaces
+python scripts/generate_cap_token.py \
+  --kid "${CAP_KEY_ACTIVE_ID:-active}" \
+  --secret "${CAP_KEY_ACTIVE:-dev-secret}" \
+  --ns my-app --ns integration-test \
+  --verb put --verb get --verb delete --verb query --verb lease
+
+# Export it
+export AGENTSTATE_API_KEY=$(python scripts/generate_cap_token.py \
+  --kid "${CAP_KEY_ACTIVE_ID:-active}" \
+  --secret "${CAP_KEY_ACTIVE:-dev-secret}" \
+  --ns my-app --ns integration-test \
+  --verb put --verb get --verb delete --verb query --verb lease)
+```
+
+If you prefer to disable auth in local dev, unset capability keys in compose (see comments in `docker-compose.yml`).
+
 ### 3. Your First Agent
 
 **Python Example:**

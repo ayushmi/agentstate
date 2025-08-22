@@ -124,7 +124,10 @@ class AgentStateClient:
             True if server is healthy, False otherwise
         """
         try:
-            response = self.session.get(f"{self.base_url}/health", timeout=5)
+            # Create a separate session without auth headers for health check
+            # The health endpoint should not require authentication
+            import requests
+            response = requests.get(f"{self.base_url}/health", timeout=5)
             return response.status_code == 200 and response.text.strip() == "ok"
         except:
             return False
@@ -177,7 +180,7 @@ class AgentStateClient:
         while True:
             try:
                 # SSE stream
-                url = f"{self.base}/watch"
+                url = f"{self.base_url}/v1/{self.namespace}/watch"
                 headers = {}
                 # from_commit is passed by SSE id resume via Last-Event-ID if supported; simplest: filter server-side by ignoring, but we embed in URL only via gRPC normally
                 # We will just resume client-side by filtering events < last
@@ -222,16 +225,16 @@ class AgentStateClient:
                 backoff = min(backoff_max_ms, max(backoff_min_ms, backoff * 2))
 
     def lease_acquire(self, key: str, owner: str, ttl: int):
-        r = requests.post(f"{self.base}/lease/acquire", json={"key": key, "owner": owner, "ttl": ttl})
+        r = requests.post(f"{self.base_url}/v1/{self.namespace}/lease/acquire", json={"key": key, "owner": owner, "ttl": ttl})
         r.raise_for_status()
         return r.json()
 
     def lease_renew(self, key: str, owner: str, token: int, ttl: int):
-        r = requests.post(f"{self.base}/lease/renew", json={"key": key, "owner": owner, "token": token, "ttl": ttl})
+        r = requests.post(f"{self.base_url}/v1/{self.namespace}/lease/renew", json={"key": key, "owner": owner, "token": token, "ttl": ttl})
         r.raise_for_status()
         return r.json()
 
     def lease_release(self, key: str, owner: str, token: int):
-        r = requests.post(f"{self.base}/lease/release", json={"key": key, "owner": owner, "token": token})
+        r = requests.post(f"{self.base_url}/v1/{self.namespace}/lease/release", json={"key": key, "owner": owner, "token": token})
         r.raise_for_status()
         return True

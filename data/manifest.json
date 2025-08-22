@@ -1,0 +1,13 @@
+{
+  "version": 1,
+  "current_snapshot": null,
+  "snapshot_bookmark": null,
+  "last_seq": 1,
+  "current_segment": "00000001.wal",
+  "segments": [
+    {
+      "name": "00000001.wal",
+      "max_seq": 1
+    }
+  ]
+}

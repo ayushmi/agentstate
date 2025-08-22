@@ -54,6 +54,21 @@ for i in {1..30}; do
     sleep 1
 done
 
+# Generate capability token for local dev and export to env
+echo ""
+echo "🔑 Generating local dev capability token..."
+KID=${CAP_KEY_ACTIVE_ID:-active}
+SECRET=${CAP_KEY_ACTIVE:-dev-secret}
+TOKEN=$(python3 ../scripts/generate_cap_token.py \
+  --kid "$KID" \
+  --secret "$SECRET" \
+  --ns langchain-demo --ns integration-test \
+  --verb put --verb get --verb delete --verb query --verb lease)
+export AGENTSTATE_API_KEY="$TOKEN"
+export AGENTSTATE_URL=${AGENTSTATE_URL:-http://localhost:8080}
+echo "✅ Exported AGENTSTATE_API_KEY for this session"
+echo "   (kid=$KID; ns=[langchain-demo,integration-test])"
+
 # Set up Python environment
 echo ""
 echo "🐍 Setting up Python testing environment..."

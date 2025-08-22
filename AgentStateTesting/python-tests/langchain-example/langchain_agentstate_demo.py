@@ -52,23 +52,31 @@ class AgentStateMemory(BaseChatMessageHistory):
     
     def _ensure_agent_exists(self):
         """Ensure the agent exists in AgentState"""
+        print(f"Checking if agent {self.agent_id} exists in AgentState...")
         try:
             self.client.get_agent(self.agent_id)
-        except Exception:
-            # Create agent if it doesn't exist
-            self.client.create_agent(
-                agent_type="langchain-agent",
-                body={
-                    "name": f"LangChain Agent {self.agent_id}",
-                    "memory": {"messages": []},
-                    "created_at": time.time()
-                },
-                tags={
-                    "framework": "langchain",
-                    "type": "chat-agent"
-                },
-                agent_id=self.agent_id
-            )
+            print(f"✅ Agent {self.agent_id} already exists")
+        except Exception as e:
+            print(f"Agent {self.agent_id} doesn't exist, creating it... (Error was: {e})")
+            try:
+                # Create agent if it doesn't exist
+                self.client.create_agent(
+                    agent_type="langchain-agent",
+                    body={
+                        "name": f"LangChain Agent {self.agent_id}",
+                        "memory": {"messages": []},
+                        "created_at": time.time()
+                    },
+                    tags={
+                        "framework": "langchain",
+                        "type": "chat-agent"
+                    },
+                    agent_id=self.agent_id
+                )
+                print(f"✅ Created agent {self.agent_id} in AgentState")
+            except Exception as create_error:
+                print(f"❌ Failed to create agent {self.agent_id}: {create_error}")
+                raise
     
     @property 
     def messages(self) -> List[BaseMessage]:
@@ -197,15 +205,26 @@ class LangChainAgentStateDemo:
             api_key=os.getenv('AGENTSTATE_API_KEY')
         )
         
-        # Test AgentState connection
+        # Add timeout to the session
+        self.agentstate.session.timeout = 5  # 5 second timeout
+        
+        # Test AgentState connection with basic HTTP request (skip SDK health_check due to auth header issue)
+        print("Testing AgentState connection...")
         try:
-            health = self.agentstate.health_check()
-            if health:
+            import requests
+            response = requests.get(f"{self.agentstate.base_url}/health", timeout=5)
+            if response.status_code == 200 and response.text.strip() == "ok":
                 print("✅ AgentState connection successful")
             else:
-                print("⚠️ AgentState health check failed")
+                print("⚠️ AgentState health check failed - server returned non-healthy status")
+                print("Make sure AgentState server is running: docker run -p 8080:8080 ayushmi/agentstate:latest")
+                raise Exception("AgentState server not healthy")
         except Exception as e:
             print(f"❌ AgentState connection failed: {e}")
+            print("Troubleshooting:")
+            print("1. Make sure AgentState server is running: docker-compose up -d")
+            print("2. Check if port 8080 is accessible: curl http://localhost:8080/health") 
+            print("3. Verify AGENTSTATE_URL environment variable")
             raise
         
         # Initialize OpenAI (requires OPENAI_API_KEY environment variable)
@@ -268,13 +287,21 @@ class LangChainAgentStateDemo:
             agent_executor = AgentExecutor(
                 agent=agent,
                 tools=self.tools,
-                verbose=True,
-                memory=memory
+                verbose=True
             )
             
-            self.agents[agent_id] = agent_executor
+            # Wrap with message history for memory support
+            from langchain_core.runnables.history import RunnableWithMessageHistory
+            agent_with_memory = RunnableWithMessageHistory(
+                agent_executor,
+                lambda session_id: memory,  # Return our AgentState memory
+                input_messages_key="input",
+                history_messages_key="chat_history",
+            )
+            
+            self.agents[agent_id] = agent_with_memory
             print(f"✅ Successfully created agent: {agent_id}")
-            return agent_executor
+            return agent_with_memory
             
         except Exception as e:
             print(f"❌ Error creating agent {agent_id}: {e}")
@@ -311,15 +338,17 @@ class LangChainAgentStateDemo:
             return
         
         print("\n📊 Math Agent solving a problem:")
-        math_response = math_agent.invoke({
-            "input": "Calculate the area of a circle with radius 5, then tell other agents about this calculation"
-        })
+        math_response = math_agent.invoke(
+            {"input": "Calculate the area of a circle with radius 5, then tell other agents about this calculation"},
+            config={"configurable": {"session_id": "math-specialist"}}
+        )
         print(f"Math Agent: {math_response['output']}")
         
         print("\n🎯 Coordinator organizing tasks:")
-        coord_response = coord_agent.invoke({
-            "input": "Check what coordination messages have been sent and organize a summary"
-        })
+        coord_response = coord_agent.invoke(
+            {"input": "Check what coordination messages have been sent and organize a summary"},
+            config={"configurable": {"session_id": "coordinator"}}
+        )
         print(f"Coordinator: {coord_response['output']}")
         
         print("\n📈 Checking AgentState for stored data:")
@@ -336,13 +365,31 @@ class LangChainAgentStateDemo:
     
     def cleanup(self):
         """Clean up test agents"""
+        print("🧹 Cleaning up demo agents...")
         try:
+            # Set a shorter timeout for cleanup
+            original_timeout = getattr(self.agentstate.session, 'timeout', None)
+            self.agentstate.session.timeout = 3
+            
             agents = self.agentstate.query_agents({"framework": "langchain"})
+            print(f"Found {len(agents)} agents to clean up")
+            
             for agent in agents:
-                self.agentstate.delete_agent(agent['id'])
-            print(f"🧹 Cleaned up {len(agents)} test agents")
+                try:
+                    self.agentstate.delete_agent(agent['id'])
+                    print(f"Deleted agent: {agent['id']}")
+                except Exception as delete_error:
+                    print(f"Failed to delete agent {agent['id']}: {delete_error}")
+            
+            print(f"✅ Cleanup completed")
+            
+            # Restore original timeout
+            if original_timeout:
+                self.agentstate.session.timeout = original_timeout
+                
         except Exception as e:
-            print(f"❌ Cleanup error: {e}")
+            print(f"❌ Cleanup error (this is non-critical): {e}")
+            print("You can manually clean up agents if needed")
 
 
 def main():
