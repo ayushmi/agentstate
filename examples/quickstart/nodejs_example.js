@@ -9,61 +9,11 @@
  * - Subscribe to real-time updates  
  * - Manage agent lifecycle
  * 
- * Install: npm install axios
+ * Install: npm install agentstate
  * Usage: node nodejs_example.js
  */
 
-const axios = require('axios');
-
-class AgentStateClient {
-    constructor(baseUrl = 'http://localhost:8080', namespace = 'production') {
-        this.baseUrl = baseUrl.replace(/\/$/, '');
-        this.namespace = namespace;
-        this.client = axios.create({
-            headers: { 'Content-Type': 'application/json' }
-        });
-    }
-
-    async createAgent(type, body, tags = {}, agentId = null) {
-        const payload = { type, body, tags };
-        if (agentId) payload.id = agentId;
-
-        const response = await this.client.post(
-            `${this.baseUrl}/v1/${this.namespace}/objects`,
-            payload
-        );
-        return response.data;
-    }
-
-    async getAgent(agentId) {
-        const response = await this.client.get(
-            `${this.baseUrl}/v1/${this.namespace}/objects/${agentId}`
-        );
-        return response.data;
-    }
-
-    async queryAgents(tags = null, typeFilter = null) {
-        const query = tags ? { tags } : {};
-        
-        const response = await this.client.post(
-            `${this.baseUrl}/v1/${this.namespace}/query`,
-            query
-        );
-        
-        let agents = response.data;
-        if (typeFilter) {
-            agents = agents.filter(a => a.type === typeFilter);
-        }
-        
-        return agents;
-    }
-
-    async deleteAgent(agentId) {
-        await this.client.delete(
-            `${this.baseUrl}/v1/${this.namespace}/objects/${agentId}`
-        );
-    }
-}
+const { AgentStateClient } = require('agentstate');
 
 async function sleep(ms) {
     return new Promise(resolve => setTimeout(resolve, ms));
@@ -250,11 +200,11 @@ async function main() {
     }
 }
 
-// Check if axios is available
+// Check if agentstate is available
 try {
-    require('axios');
+    require('agentstate');
     main();
 } catch (e) {
-    console.error('❌ Please install axios: npm install axios');
+    console.error('❌ Please install agentstate: npm install agentstate');
     process.exit(1);
 }

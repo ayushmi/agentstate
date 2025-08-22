@@ -20,7 +20,7 @@ Think of it as a specialized database for AI agents, similar to how Firebase sim
 
 Using Docker (recommended):
 ```bash
-docker run -p 8080:8080 -p 9090:9090 agentstate:latest
+docker run -p 8080:8080 ayushmi/agentstate:latest
 ```
 
 Or with persistent storage:
@@ -28,7 +28,7 @@ Or with persistent storage:
 docker run -p 8080:8080 -p 9090:9090 \
   -e DATA_DIR=/data \
   -v agentstate-data:/data \
-  agentstate:latest
+  ayushmi/agentstate:latest
 ```
 
 ### 2. Install SDK

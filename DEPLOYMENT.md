@@ -8,7 +8,7 @@ Complete guide for deploying AgentState in production environments.
 
 **Basic deployment:**
 ```bash
-docker run -p 8080:8080 -p 9090:9090 agentstate:v1.0.0
+docker run -p 8080:8080 -p 9090:9090 ayushmi/agentstate:latest
 ```
 
 **Production with persistent storage:**
@@ -18,7 +18,7 @@ docker run -d --name agentstate \
   -e DATA_DIR=/data \
   -v agentstate-data:/data \
   --restart unless-stopped \
-  agentstate:v1.0.0
+  ayushmi/agentstate:latest
 ```
 
 ### 🐙 Docker Compose
@@ -28,7 +28,7 @@ Create `docker-compose.yml`:
 version: '3.8'
 services:
   agentstate:
-    image: agentstate:v1.0.0
+    image: ayushmi/agentstate:latest
     ports:
       - "8080:8080"
       - "9090:9090"
@@ -399,7 +399,7 @@ spec:
 make verify
 
 # Test Docker image
-docker run --rm -p 8080:8080 agentstate:v1.0.0 &
+docker run --rm -p 8080:8080 ayushmi/agentstate:latest &
 sleep 5
 curl -f http://localhost:8080/health
 pkill agentstate-server

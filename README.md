@@ -234,7 +234,7 @@ team_agents = requests.post("http://localhost:8080/v1/production/query", json={
 docker run -d --name agentstate \
   -p 8080:8080 \
   -p 9090:9090 \
-  agentstate:latest
+  ayushmi/agentstate:latest
 ```
 
 ### Production Setup
@@ -245,7 +245,7 @@ docker run -d --name agentstate \
   -e DATA_DIR=/data \
   -v agentstate-data:/data \
   --restart unless-stopped \
-  agentstate:latest
+  ayushmi/agentstate:latest
 ```
 
 ### Docker Compose
@@ -253,7 +253,7 @@ docker run -d --name agentstate \
 version: '3.8'
 services:
   agentstate:
-    image: agentstate:latest
+    image: ayushmi/agentstate:latest
     ports:
       - "8080:8080"
       - "9090:9090"
@@ -286,7 +286,7 @@ spec:
     spec:
       containers:
       - name: agentstate
-        image: agentstate:latest
+        image: ayushmi/agentstate:latest
         ports:
         - containerPort: 8080
         - containerPort: 9090
@@ -336,7 +336,7 @@ cargo build --release -p agentstate-server
 ./target/release/agentstate-server
 
 # Or build Docker image
-docker build -f docker/Dockerfile -t agentstate:latest .
+docker build -f docker/Dockerfile -t ayushmi/agentstate:latest .
 ```
 
 ## 📚 Documentation
@@ -467,5 +467,61 @@ print(f'Created agent: {agent[\"id\"]}')
 - 🦜 **LangChain Integration**: [AgentStateTesting/python-tests/langchain-example/](AgentStateTesting/python-tests/langchain-example/)
 - 🤖 **CrewAI Integration**: [AgentStateTesting/python-tests/crewai-example/](AgentStateTesting/python-tests/crewai-example/)  
 - 📝 **Complete Quickstart**: [QUICKSTART.md](QUICKSTART.md)
+
+## 🔧 Troubleshooting
+
+### Common Issues
+
+**Server Not Starting**
+```bash
+# Check if port is already in use
+lsof -i :8080
+
+# Use different port if needed
+docker run -p 8081:8080 ayushmi/agentstate:latest
+```
+
+**Connection Refused**
+```bash
+# Verify server is running
+curl http://localhost:8080/health
+
+# Should return: ok
+```
+
+**SDK Installation Issues**
+```bash
+# Python: Upgrade pip and reinstall
+pip install --upgrade pip
+pip install --upgrade agentstate
+
+# Node.js: Clear cache and reinstall
+npm cache clean --force
+npm install agentstate
+```
+
+**Performance Issues**
+- Default setup handles 1,400+ ops/sec
+- For higher throughput, see [Performance Guide](docs/perf.md)
+- Monitor with `/metrics` endpoint on port 9090
+
+**Docker Image Issues**
+```bash
+# Pull latest image
+docker pull ayushmi/agentstate:latest
+
+# Check if image is running
+docker ps
+
+# View container logs
+docker logs <container-id>
+```
+
+### Getting Help
+
+- 📖 **Documentation**: [docs/](docs/)
+- 💬 **Issues**: [GitHub Issues](https://github.com/ayushmi/agentstate/issues)
+- 🚀 **Examples**: [examples/](examples/)
+- 📧 **Contact**: Create an issue for support
 
 For questions and support, see our [Issues](https://github.com/ayushmi/agentstate/issues) page.

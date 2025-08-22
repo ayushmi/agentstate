@@ -9,72 +9,13 @@ This example demonstrates how to use AgentState as "Firebase for AI Agents"
 - Subscribe to real-time updates
 - Manage agent lifecycle
 
-Install: pip install requests
+Install: pip install agentstate
 Usage: python python_example.py
 """
 
-import requests
-import json
 import time
 from datetime import datetime
-from typing import Dict, Any, List, Optional
-
-class AgentStateClient:
-    """Simple AgentState HTTP client"""
-    
-    def __init__(self, base_url: str = "http://localhost:8080", namespace: str = "production"):
-        self.base_url = base_url.rstrip('/')
-        self.namespace = namespace
-        self.session = requests.Session()
-    
-    def create_agent(self, agent_type: str, body: Dict[str, Any], tags: Dict[str, str] = None, agent_id: str = None) -> Dict[str, Any]:
-        """Create or update an agent"""
-        payload = {
-            "type": agent_type,
-            "body": body,
-            "tags": tags or {}
-        }
-        if agent_id:
-            payload["id"] = agent_id
-            
-        response = self.session.post(
-            f"{self.base_url}/v1/{self.namespace}/objects",
-            json=payload,
-            headers={"Content-Type": "application/json"}
-        )
-        response.raise_for_status()
-        return response.json()
-    
-    def get_agent(self, agent_id: str) -> Dict[str, Any]:
-        """Get agent by ID"""
-        response = self.session.get(f"{self.base_url}/v1/{self.namespace}/objects/{agent_id}")
-        response.raise_for_status()
-        return response.json()
-    
-    def query_agents(self, tags: Dict[str, str] = None, type_filter: str = None) -> List[Dict[str, Any]]:
-        """Query agents by tags or type"""
-        query = {}
-        if tags:
-            query["tags"] = tags
-        
-        response = self.session.post(
-            f"{self.base_url}/v1/{self.namespace}/query",
-            json=query,
-            headers={"Content-Type": "application/json"}
-        )
-        response.raise_for_status()
-        agents = response.json()
-        
-        # Filter by type if specified
-        if type_filter:
-            agents = [a for a in agents if a.get("type") == type_filter]
-            
-        return agents
-    
-    def delete_agent(self, agent_id: str) -> None:
-        """Delete an agent"""
-        response = self.session.delete(f"{self.base_url}/v1/{self.namespace}/objects/{agent_id}")
-        response.raise_for_status()
+from agentstate import AgentStateClient
 
 def main():
     """Example usage demonstrating AgentState as Firebase for AI Agents"""
@@ -82,8 +23,8 @@ def main():
     print("🤖 AgentState Python Example")
     print("============================")
     
-    # Initialize client
-    client = AgentStateClient(namespace="my-ai-app")
+    # Initialize client  
+    client = AgentStateClient(base_url="http://localhost:8080", namespace="my-ai-app")
     
     try:
         # 1. Create a chatbot agent
@@ -163,7 +104,8 @@ def main():
         
         # 5. Query specific agent types
         print("\n🤖 Querying chatbot agents...")
-        chatbots = client.query_agents(type_filter="chatbot")
+        all_agents = client.query_agents()
+        chatbots = [a for a in all_agents if a.get("type") == "chatbot"]
         print(f"✅ Found {len(chatbots)} chatbot agents")
         
         # 6. Demonstrate real-time state management
@@ -210,11 +152,9 @@ def main():
         print("   🔄 Manage agent lifecycle")
         print(f"\nReady to integrate into your AI application! 🚀")
         
-    except requests.exceptions.RequestException as e:
-        print(f"❌ API Error: {e}")
-        print("Make sure AgentState server is running on http://localhost:8080")
     except Exception as e:
         print(f"❌ Error: {e}")
+        print("Make sure AgentState server is running on http://localhost:8080")
 
 if __name__ == "__main__":
     main()
