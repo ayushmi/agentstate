@@ -1,6 +1,6 @@
 {
   "name": "agentstate",
-  "version": "1.0.1",
+  "version": "1.0.2",
   "description": "Firebase for AI Agents - TypeScript/JavaScript SDK for persistent agent state management",
   "keywords": ["ai", "agents", "state", "management", "firebase", "persistent", "storage", "real-time"],
   "author": {

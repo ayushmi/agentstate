@@ -2,10 +2,19 @@
 **Firebase for AI Agents** — Persistent state management for AI applications
 
 [![Docker Build](https://img.shields.io/badge/docker-ready-blue)](#docker-deployment)
-[![API Status](https://img.shields.io/badge/api-stable-green)](#api-reference)
+[![API Status](https://img.shields.io/badge/api-stable-green)](#api-reference)  
 [![Load Tested](https://img.shields.io/badge/load%20tested-1400%20ops%2Fs-brightgreen)](#performance)
+[![Python SDK](https://img.shields.io/badge/python-pypi-blue)](https://pypi.org/project/agentstate/)
+[![Node.js SDK](https://img.shields.io/badge/nodejs-npm-green)](https://www.npmjs.com/package/agentstate)
 
 AgentState provides a simple, scalable way to store and manage AI agent state with real-time updates, rich querying, and built-in persistence. Think Firebase for your AI agents.
+
+**🚀 Key Features:**
+- **Zero-config setup** — Docker one-liner gets you started
+- **Language agnostic** — HTTP/gRPC APIs + Python/Node.js SDKs  
+- **High performance** — 1,400+ ops/sec with crash-safe persistence
+- **Real-time queries** — Find agents by tags, get live updates
+- **Production ready** — Load tested, monitored, Kubernetes friendly
 
 ## ✨ Features
 
@@ -20,69 +29,152 @@ AgentState provides a simple, scalable way to store and manage AI agent state wi
 
 ### 1. Start AgentState Server
 
+**Option A: Using Docker (Recommended)**
 ```bash
-# Using Docker (recommended)
-docker run -p 8080:8080 -p 9090:9090 agentstate:latest
+# Quick start - no auth required
+docker run -p 8080:8080 ayushmi/agentstate:latest
 
-# With persistent storage  
+# With persistent storage
 docker run -p 8080:8080 -p 9090:9090 \
   -e DATA_DIR=/data \
   -v agentstate-data:/data \
-  agentstate:latest
+  ayushmi/agentstate:latest
 
 # Test it works
 curl http://localhost:8080/health
 ```
 
-Authentication in local dev (using docker-compose defaults): generate a dev token and export it as `AGENTSTATE_API_KEY`.
-
+**Option B: Using Docker Compose (Full Setup)**
 ```bash
+git clone https://github.com/ayushmi/agentstate.git
+cd agentstate
+docker-compose up -d
+
+# Generate auth token for testing (optional)
 export AGENTSTATE_API_KEY=$(python scripts/generate_cap_token.py \
-  --kid "${CAP_KEY_ACTIVE_ID:-active}" \
-  --secret "${CAP_KEY_ACTIVE:-dev-secret}" \
-  --ns my-app \
-  --verb put --verb get --verb delete --verb query --verb lease)
+  --kid active --secret dev-secret \
+  --ns my-app --verb put --verb get --verb delete --verb query --verb lease)
 ```
 
 ### 2. Use in Your Application
 
-**Python:**
+**Python SDK:**
+```bash
+pip install agentstate
+```
 ```python
-import requests
+from agentstate import AgentStateClient
+
+client = AgentStateClient(base_url='http://localhost:8080', namespace='my-app')
 
 # Create agent
-response = requests.post("http://localhost:8080/v1/my-app/objects", json={
-    "type": "chatbot",
-    "body": {"name": "CustomerBot", "status": "active"},
-    "tags": {"team": "customer-success"}
-})
-agent = response.json()
+agent = client.create_agent(
+    agent_type='chatbot',
+    body={'name': 'CustomerBot', 'status': 'active'},
+    tags={'team': 'customer-success'}
+)
+print(f"Created agent: {agent['id']}")
 
 # Query agents  
-response = requests.post("http://localhost:8080/v1/my-app/query", json={
-    "tags": {"team": "customer-success"}
-})
-agents = response.json()
+agents = client.query_agents(tags={'team': 'customer-success'})
 print(f"Found {len(agents)} customer success agents")
+
+# Get specific agent
+agent = client.get_agent(agent_id)
+print(f"Agent status: {agent['body']['status']}")
 ```
 
-**Node.js:**
+**Node.js SDK:**
+```bash
+npm install agentstate
+```
 ```javascript
-const axios = require('axios');
+import { AgentStateClient } from 'agentstate';
+
+const client = new AgentStateClient({
+    baseUrl: 'http://localhost:8080',
+    namespace: 'my-app'
+});
 
 // Create agent
-const {data: agent} = await axios.post('http://localhost:8080/v1/my-app/objects', {
+const agent = await client.createAgent({
     type: 'workflow',
     body: {name: 'DataProcessor', status: 'idle'},
     tags: {capability: 'data-processing'}
 });
 
 // Update agent state
-await axios.post('http://localhost:8080/v1/my-app/objects', {
-    type: 'workflow', 
-    body: {name: 'DataProcessor', status: 'processing', currentJob: 'user-analytics'},
-    tags: {capability: 'data-processing'}
-}, {params: {id: agent.id}});
+const updatedAgent = await client.updateAgent(agent.id, {
+    body: {name: 'DataProcessor', status: 'processing', currentJob: 'analytics'}
+});
+
+console.log(`Agent ${agent.id} status: ${updatedAgent.body.status}`);
+```
+
+**Raw HTTP API:**
+```bash
+# Create agent
+curl -X POST http://localhost:8080/v1/my-app/objects \
+  -H "Content-Type: application/json" \
+  -d '{"type": "chatbot", "body": {"name": "Bot1"}, "tags": {"env": "prod"}}'
+
+# Query agents
+curl -X POST http://localhost:8080/v1/my-app/query \
+  -H "Content-Type: application/json" \
+  -d '{"tags": {"env": "prod"}}'
+```
+
+## 🤖 AI Framework Integration
+
+AgentState integrates seamlessly with popular AI frameworks:
+
+**LangChain Integration:**
+```python
+from agentstate import AgentStateClient
+from langchain.memory import BaseChatMessageHistory
+from langchain.agents import AgentExecutor
+
+# Use AgentState as LangChain memory backend
+class AgentStateMemory(BaseChatMessageHistory):
+    def __init__(self, agent_id: str, client: AgentStateClient):
+        self.agent_id = agent_id
+        self.client = client
+
+# Full LangChain + AgentState demo available in examples/
+```
+
+**CrewAI Integration:**
+```python
+from agentstate import AgentStateClient
+import crewai
+
+client = AgentStateClient(base_url='http://localhost:8080', namespace='crew')
+
+# Store crew member states, task progress, and coordination
+agent = client.create_agent(
+    agent_type='crew_member',
+    body={'role': 'researcher', 'current_task': 'market_analysis'},
+    tags={'crew_id': 'marketing_team', 'status': 'active'}
+)
+```
+
+**Custom Agent Frameworks:**
+```python
+# AgentState works with any agent framework
+class MyAgent:
+    def __init__(self, agent_id):
+        self.state = AgentStateClient(namespace='my_agents')
+        self.id = agent_id
+        
+    def save_state(self, data):
+        return self.state.create_agent(
+            agent_type='custom',
+            body=data,
+            agent_id=self.id
+        )
+        
+    def load_state(self):
+        return self.state.get_agent(self.id)
 ```
 
 ## 📊 Performance
@@ -234,7 +326,7 @@ spec:
 ### Build and Run
 ```bash
 # Clone repository
-git clone https://github.com/your-org/agentstate.git
+git clone https://github.com/ayushmi/agentstate.git
 cd agentstate
 
 # Build server
@@ -286,6 +378,44 @@ bash test_suite.sh
 
 This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
 
+## 💡 Use Cases
+
+**Multi-Agent AI Systems:**
+```python
+# Coordinate multiple specialized agents
+marketing_agent = client.create_agent('marketing_specialist', {...})
+research_agent = client.create_agent('research_specialist', {...})
+writer_agent = client.create_agent('content_writer', {...})
+
+# Query agents by capability when needed
+available_agents = client.query_agents(tags={'status': 'idle', 'capability': 'research'})
+```
+
+**Workflow Orchestration:**
+```python
+# Track workflow steps and state
+workflow = client.create_agent(
+    agent_type='workflow',
+    body={
+        'current_step': 'data_collection',
+        'completed_steps': ['initialization'],
+        'next_steps': ['analysis', 'reporting']
+    },
+    tags={'workflow_id': 'user_onboarding', 'priority': 'high'}
+)
+```
+
+**Agent Monitoring & Analytics:**
+```python
+# Real-time agent health monitoring
+active_agents = client.query_agents(tags={'status': 'active'})
+failed_agents = client.query_agents(tags={'status': 'error'})
+
+# Build dashboards with live agent metrics
+for agent in active_agents:
+    print(f"Agent {agent['id']}: {agent['body']['current_task']}")
+```
+
 ## 🌟 Why AgentState?
 
 Traditional approaches to AI agent state management involve:
@@ -313,4 +443,29 @@ AgentState provides:
 
 **Ready to power your AI agents with persistent, queryable state!** 🚀
 
-For questions and support, see our [Issues](https://github.com/your-org/agentstate/issues) page.
+## 🚀 Try it Now
+
+**1-Minute Setup:**
+```bash
+# Start server
+docker run -p 8080:8080 ayushmi/agentstate:latest
+
+# Install SDK (Python or Node.js)
+pip install agentstate
+# npm install agentstate
+
+# Create your first agent
+python -c "
+from agentstate import AgentStateClient
+client = AgentStateClient(base_url='http://localhost:8080', namespace='demo')
+agent = client.create_agent('chatbot', {'name': 'MyBot', 'status': 'active'})
+print(f'Created agent: {agent[\"id\"]}')
+"
+```
+
+**Explore Examples:**
+- 🦜 **LangChain Integration**: [AgentStateTesting/python-tests/langchain-example/](AgentStateTesting/python-tests/langchain-example/)
+- 🤖 **CrewAI Integration**: [AgentStateTesting/python-tests/crewai-example/](AgentStateTesting/python-tests/crewai-example/)  
+- 📝 **Complete Quickstart**: [QUICKSTART.md](QUICKSTART.md)
+
+For questions and support, see our [Issues](https://github.com/ayushmi/agentstate/issues) page.
