@@ -44,7 +44,7 @@ crc32c = "0.6"
 zstd = { version = "0.13", features = ["zstdmt"] }
 ciborium = { version = "0.2", features = ["std"] }
 serde_cbor = "0.11"
-prometheus = "0.13"
+prometheus = "0.14"
 opentelemetry = "0.23"
 opentelemetry_sdk = { version = "0.23", features = ["rt-tokio"] }
 tracing-opentelemetry = "0.24"
