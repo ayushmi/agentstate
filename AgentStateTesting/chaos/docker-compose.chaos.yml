@@ -1,0 +1,16 @@
+version: '3.9'
+services:
+  agentstate:
+    container_name: agentstate-chaos
+    build:
+      context: .
+      dockerfile: AgentStateTesting/chaos/Dockerfile.chaos
+    tmpfs:
+      - /data:rw,size=64m
+    environment:
+      DATA_DIR: /data
+      DEV_MODE: "1"
+      REGION: "us-west-2"
+      CAP_KEY_ACTIVE_ID: ${CAP_KEY_ACTIVE_ID:-active}
+      CAP_KEY_ACTIVE: ${CAP_KEY_ACTIVE:-dev-secret}
+
