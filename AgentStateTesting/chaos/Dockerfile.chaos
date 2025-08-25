@@ -6,9 +6,8 @@ RUN cargo build --release -p agentstate-server
 
 FROM debian:bookworm-slim
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    ca-certificates curl iproute2 procps coreutils && \
+    ca-certificates curl iproute2 procps coreutils bash util-linux && \
     rm -rf /var/lib/apt/lists/*
 COPY --from=builder /app/target/release/agentstate-server /agentstate-server
 EXPOSE 8080 9090
 ENTRYPOINT ["/agentstate-server"]
-
