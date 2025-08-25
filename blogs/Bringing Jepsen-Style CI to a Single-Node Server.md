@@ -1,6 +1,6 @@
 In-memory Chaos: Bringing Jepsen-Style CI to a Single-Node Server
 
-25th Aug 2025
+18 Aug 2025
 
 I’ve been tightening up durability and availability guarantees for AgentState, and wanted a way to catch the “bad day” bugs before users do: crash loops, disk-full, pauses that look like partitions. We don’t have clustering wired yet, but that shouldn’t block us from doing meaningful chaos. This post is a short field report on how we built a non‑intrusive, repeatable chaos CI that runs against a single node and still finds real issues.
 
@@ -56,3 +56,5 @@ This chaos CI runs on every PR and nightly. It doesn’t touch the production im
 
 If you’re debating when to add chaos: before clustering is not “too early.” It’s the right time to make correctness visible and routine.
 
+Code
+- PR (harness + CI): https://github.com/ayushmi/agentstate/pull/27
