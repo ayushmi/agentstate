@@ -85,3 +85,77 @@ class Workload:
         for t in self.threads:
             t.join(timeout=2)
 
+
+class Watcher:
+    def __init__(self, base_url: str, token: str, namespace: str = "chaos"):
+        self.base_url = base_url.rstrip('/')
+        self.ns = namespace
+        self.token = token
+        self.session = requests.Session()
+        if self.token:
+            self.session.headers["Authorization"] = f"Bearer {self.token}"
+        self.stop = threading.Event()
+        self.thread = None
+        self.global_last_seq = -1
+        self.seq_monotonic_violation = False
+        self.overflow_seen = False
+        self.lock = threading.Lock()
+        # last seen per id
+        self.last: Dict[str, Tuple[int, dict]] = {}
+
+    def _consume(self):
+        while not self.stop.is_set():
+            try:
+                with self.session.get(f"{self.base_url}/v1/{self.ns}/watch", stream=True, timeout=10) as r:
+                    if r.status_code != 200:
+                        time.sleep(0.5)
+                        continue
+                    event_seq = None
+                    for line in r.iter_lines(decode_unicode=True):
+                        if self.stop.is_set():
+                            break
+                        if not line:
+                            continue
+                        if line.startswith('id: '):
+                            try:
+                                event_seq = int(line[4:].strip())
+                            except Exception:
+                                event_seq = None
+                        elif line.startswith('data: '):
+                            data = line[6:]
+                            try:
+                                ev = json.loads(data)
+                            except Exception:
+                                continue
+                            if 'error' in ev and ev.get('error') == 'overflow':
+                                self.overflow_seen = True
+                                return
+                            # commit_seq can be on root
+                            seq = ev.get('commit_seq', event_seq if event_seq is not None else -1)
+                            with self.lock:
+                                if seq is not None and isinstance(seq, int):
+                                    if seq <= self.global_last_seq:
+                                        self.seq_monotonic_violation = True
+                                    self.global_last_seq = max(self.global_last_seq, seq)
+                                if ev.get('type') == 'put' and isinstance(ev.get('obj'), dict):
+                                    oid = ev['obj'].get('id')
+                                    body = ev['obj'].get('body')
+                                    if oid is not None:
+                                        self.last[oid] = (seq if isinstance(seq, int) else -1, body)
+            except Exception:
+                time.sleep(0.5)
+
+    def start(self):
+        self.thread = threading.Thread(target=self._consume, daemon=True)
+        self.thread.start()
+
+    def stop_all(self):
+        self.stop.set()
+        # Close HTTP session to break blocking iter
+        try:
+            self.session.close()
+        except Exception:
+            pass
+        if self.thread:
+            self.thread.join(timeout=2)
+

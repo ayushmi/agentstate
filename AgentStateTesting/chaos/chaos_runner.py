@@ -10,7 +10,7 @@ from pathlib import Path
 import requests
 
 from nemeses import ensure_up, ensure_down, pause, kill, fill_disk, free_disk
-from workload import Workload
+from workload import Workload, Watcher
 
 ROOT = Path(__file__).resolve().parents[2]
 COMPOSE = [str(ROOT / 'docker-compose.yml'), str(ROOT / 'AgentStateTesting/chaos/docker-compose.chaos.yml')]
@@ -56,6 +56,8 @@ def main():
 
         token = gen_token([NAMESPACE], ['put', 'get', 'delete', 'query', 'lease', 'admin'])
         wl = Workload(BASE_URL, token, NAMESPACE)
+        watcher = Watcher(BASE_URL, token, NAMESPACE)
+        watcher.start()
         wl.start(writers=4, readers=2)
 
         # Warm up
@@ -100,13 +102,106 @@ def main():
             print('error: writes did not recover after freeing space', file=sys.stderr)
             return 2
 
-        print('chaos run completed')
-        return 0
+        # Assertions: watch stream and metrics
+        ok = assert_metrics()
+        ok = assert_watch(wl, watcher) and ok
+        print('chaos run completed' + ('' if ok else ' with assertion failures'))
+        return 0 if ok else 2
     finally:
         wl.stop_all() if 'wl' in locals() else None
+        watcher.stop_all() if 'watcher' in locals() else None
         ensure_down(COMPOSE)
 
 
 if __name__ == '__main__':
     sys.exit(main())
 
+
+def fetch_metrics():
+    try:
+        r = requests.get(f"{BASE_URL}/metrics", timeout=5)
+        if r.status_code != 200:
+            return ''
+        return r.text
+    except Exception:
+        return ''
+
+
+def parse_metric(text: str, name: str, label_filter: dict | None = None) -> float:
+    # very small parser for Prometheus text exposition
+    val = 0.0
+    for line in text.splitlines():
+        if not line or line.startswith('#'):
+            continue
+        if not line.startswith(name):
+            continue
+        # e.g., watch_drops_total{reason="overflow"} 0
+        try:
+            metric, num = line.split(' ', 1)
+            labels = {}
+            if '{' in metric and metric.endswith('}'+metric.split('}')[1]):
+                pass  # guard, but not needed
+            if '{' in metric:
+                base, lab = metric.split('{', 1)
+                lab = lab.rstrip('}')
+                for kv in lab.split(','):
+                    if not kv:
+                        continue
+                    k, v = kv.split('=', 1)
+                    labels[k] = v.strip('"')
+            if label_filter is None or all(labels.get(k) == v for k, v in label_filter.items()):
+                try:
+                    val += float(num.strip())
+                except Exception:
+                    continue
+        except Exception:
+            continue
+    return val
+
+
+def assert_metrics() -> bool:
+    text = fetch_metrics()
+    if not text:
+        print('warning: could not fetch /metrics')
+        return False
+    ok = True
+    drops = parse_metric(text, 'watch_drops_total', {'reason': 'overflow'})
+    if drops != 0.0:
+        print(f'assertion failed: watch_drops_total{{reason="overflow"}} == 0, got {drops}')
+        ok = False
+    clients = parse_metric(text, 'watch_clients', {'proto': 'sse'})
+    if clients < 1.0:
+        print(f'assertion failed: watch_clients{{proto="sse"}} >= 1, got {clients}')
+        ok = False
+    emitted = parse_metric(text, 'watch_events_total')
+    if emitted <= 0.0:
+        print('assertion failed: watch_events_total > 0')
+        ok = False
+    return ok
+
+
+def assert_watch(wl: Workload, watcher: Watcher) -> bool:
+    # give the watcher a moment to catch up
+    time.sleep(1.0)
+    ok = True
+    if watcher.overflow_seen:
+        print('assertion failed: watcher saw overflow')
+        ok = False
+    if watcher.seq_monotonic_violation:
+        print('assertion failed: watcher saw non-monotonic sequence ids')
+        ok = False
+    # Compare a sample of keys that writers touched
+    with wl.state_lock:
+        sample = list(wl.latest.items())[:5]
+    for key, (_ver, body) in sample:
+        with watcher.lock:
+            w = watcher.last.get(key)
+        if not w:
+            print(f'assertion failed: watcher did not see key {key}')
+            ok = False
+            continue
+        _, wbody = w
+        if wbody != body:
+            print(f'assertion failed: watcher body mismatch for {key}')
+            ok = False
+    return ok
