@@ -1,0 +1,51 @@
+name: Chaos CI
+
+on:
+  push:
+    branches: [ "feature/chaos-ci-*", "chaos/*" ]
+  pull_request:
+    types: [opened, synchronize, reopened]
+  schedule:
+    - cron: '0 6 * * *'  # daily 6:00 UTC
+
+jobs:
+  chaos:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install Python deps
+        run: |
+          python -m pip install --upgrade pip
+          pip install requests
+
+      - name: Build and run chaos stack
+        run: |
+          docker version
+          docker compose -f docker-compose.yml -f AgentStateTesting/chaos/docker-compose.chaos.yml up -d --build
+
+      - name: Run chaos suite
+        env:
+          CAP_KEY_ACTIVE: dev-secret
+          CAP_KEY_ACTIVE_ID: active
+        run: |
+          python AgentStateTesting/chaos/chaos_runner.py
+
+      - name: Dump container logs on failure
+        if: failure()
+        run: |
+          docker logs agentstate-chaos || true
+          ls -la data || true
+
+      - name: Teardown
+        if: always()
+        run: |
+          docker compose -f docker-compose.yml -f AgentStateTesting/chaos/docker-compose.chaos.yml down -v || true
