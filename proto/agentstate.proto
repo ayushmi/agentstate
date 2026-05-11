@@ -1,6 +1,12 @@
 syntax = "proto3";
 package agentstate.v1;
 
+message Cause {
+  string actor   = 1; // agent ID making this change (empty = absent)
+  string trigger = 2; // commit hash that triggered this (empty = absent)
+  string note    = 3; // human-readable reason (empty = absent)
+}
+
 message Object {
   string id = 1;
   string ns = 2;
@@ -11,6 +17,7 @@ message Object {
   repeated string parents = 7;
   string commit = 8;
   string ts_rfc3339 = 9;
+  Cause cause = 10;
 }
 
 message PutRequest {
@@ -21,6 +28,7 @@ message PutRequest {
   uint64 ttl_seconds = 5;
   repeated string parents = 6;
   string id = 7; // optional
+  Cause cause = 8;
 }
 
 message GetRequest { string ns = 1; string id = 2; string at_ts_rfc3339 = 3; }

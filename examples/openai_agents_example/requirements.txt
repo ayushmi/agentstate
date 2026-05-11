@@ -1,0 +1,2 @@
+agentstate>=1.0.2
+openai-agentstate>=0.1.0

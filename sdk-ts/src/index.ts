@@ -2,6 +2,13 @@ import axios, { AxiosInstance } from 'axios';
 
 export type Tags = Record<string, string>;
 
+/** Records why a state change happened. All fields are optional. */
+export interface Cause {
+  actor?: string;   // agent ID making this change
+  trigger?: string; // commit hash that triggered this change
+  note?: string;    // human-readable reason
+}
+
 export interface Agent {
   id: string;
   type: string;
@@ -9,6 +16,7 @@ export interface Agent {
   tags: Tags;
   commit_seq: number;
   commit_ts: string;
+  cause?: Cause;
 }
 
 /**
@@ -81,26 +89,26 @@ export class AgentStateClient {
    * @returns Created agent object with id, type, body, tags, commit_seq, commit_ts
    */
   async createAgent(
-    agentType: string, 
-    body: any, 
-    tags?: Tags, 
-    agentId?: string
+    agentType: string,
+    body: any,
+    tags?: Tags,
+    agentId?: string,
+    cause?: Cause
   ): Promise<Agent> {
     const payload: any = {
       type: agentType,
       body,
       tags: tags || {}
     };
-    
-    if (agentId) {
-      payload.id = agentId;
-    }
+
+    if (agentId) payload.id = agentId;
+    if (cause) payload.cause = cause;
 
     const response = await this.http.post(
       `${this.baseUrl}/v1/${this.namespace}/objects`,
       payload
     );
-    
+
     return response.data;
   }
 
@@ -171,8 +179,8 @@ export class AgentStateClient {
   /**
    * @deprecated Use createAgent() instead
    */
-  async put(type: string, body: any, tags?: Tags, ttl_seconds?: number, id?: string): Promise<Agent> {
-    return this.createAgent(type, body, tags, id);
+  async put(type: string, body: any, tags?: Tags, ttl_seconds?: number, id?: string, cause?: Cause): Promise<Agent> {
+    return this.createAgent(type, body, tags, id, cause);
   }
 
   /**

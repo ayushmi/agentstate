@@ -1,0 +1,12 @@
+{
+  "mcpServers": {
+    "agentstate-memory": {
+      "command": "agentstate-mcp",
+      "env": {
+        "AGENTSTATE_URL": "http://localhost:8080",
+        "AGENTSTATE_NAMESPACE": "claude-memories",
+        "AGENTSTATE_API_KEY": ""
+      }
+    }
+  }
+}

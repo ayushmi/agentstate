@@ -18,6 +18,18 @@ pub struct VecField {
     pub dims: usize,
 }
 
+/// Records why a state change happened — who made it, what triggered it, and a human note.
+/// All fields are optional so existing callers need no changes.
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+pub struct Cause {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub actor: Option<String>,     // agent ID making this change
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub trigger: Option<CommitId>, // commit hash that triggered this change
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub note: Option<String>,      // human-readable reason
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Object {
     pub id: ObjectId,
@@ -33,6 +45,8 @@ pub struct Object {
     pub commit: CommitId,
     pub ts: DateTime<Utc>,
     pub commit_seq: u64, // monotonic per-namespace
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub cause: Option<Cause>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
@@ -47,6 +61,8 @@ pub struct PutRequest {
     pub id: Option<ObjectId>,
     #[serde(default)]
     pub parents: Vec<CommitId>,
+    #[serde(default)]
+    pub cause: Option<Cause>,
 }
 
 impl Object {
@@ -67,6 +83,7 @@ impl Object {
             commit,
             ts,
             commit_seq,
+            cause: req.cause,
         }
     }
 }

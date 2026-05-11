@@ -1,0 +1,19 @@
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.backends.legacy:build"
+
+[project]
+name = "openai-agentstate"
+version = "0.1.0"
+description = "OpenAI Agents SDK run storage adapter backed by AgentState"
+readme = "README.md"
+requires-python = ">=3.9"
+dependencies = [
+    "agentstate>=1.0.2",
+]
+
+[project.optional-dependencies]
+sdk = ["openai-agents>=0.1.0"]
+
+[project.urls]
+Homepage = "https://github.com/ayushmi/agentstate"

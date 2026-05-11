@@ -1,0 +1,20 @@
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.backends.legacy:build"
+
+[project]
+name = "agentstate-mcp"
+version = "0.1.0"
+description = "MCP server exposing AgentState as persistent memory tools for Claude and other MCP clients"
+readme = "README.md"
+requires-python = ">=3.10"
+dependencies = [
+    "agentstate>=1.0.2",
+    "mcp>=1.0.0",
+]
+
+[project.scripts]
+agentstate-mcp = "agentstate_mcp.server:main"
+
+[project.urls]
+Homepage = "https://github.com/ayushmi/agentstate"

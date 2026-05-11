@@ -865,6 +865,11 @@ impl agentstate_v1::agent_state_server::AgentState for AgentStateGrpc {
                 Some(req.id)
             },
             parents: req.parents,
+            cause: req.cause.map(|c| agentstate_core::Cause {
+                actor: if c.actor.is_empty() { None } else { Some(c.actor) },
+                trigger: if c.trigger.is_empty() { None } else { Some(c.trigger) },
+                note: if c.note.is_empty() { None } else { Some(c.note) },
+            }),
         };
         let o = self
             .state
@@ -995,6 +1000,11 @@ fn to_proto_object(o: agentstate_core::Object) -> agentstate_v1::Object {
         parents: o.parents,
         commit: o.commit,
         ts_rfc3339: o.ts.to_rfc3339(),
+        cause: o.cause.map(|c| agentstate_v1::Cause {
+            actor: c.actor.unwrap_or_default(),
+            trigger: c.trigger.unwrap_or_default(),
+            note: c.note.unwrap_or_default(),
+        }),
     }
 }
 
