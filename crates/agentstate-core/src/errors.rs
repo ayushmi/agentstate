@@ -12,6 +12,8 @@ pub enum StateError {
     Invalid(String),
     #[error("internal error: {0}")]
     Internal(String),
+    #[error("invariant violation: {0:?}")]
+    InvariantViolation(Vec<String>),
 }
 
 pub type Result<T> = std::result::Result<T, StateError>;

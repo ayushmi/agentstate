@@ -47,29 +47,34 @@ class AgentStateClient:
         if api_key:
             self.session.headers['Authorization'] = f'Bearer {api_key}'
 
-    def create_agent(self, agent_type: str, body: Dict[str, Any], 
-                    tags: Optional[Dict[str, str]] = None, 
-                    agent_id: Optional[str] = None) -> Dict[str, Any]:
+    def create_agent(self, agent_type: str, body: Dict[str, Any],
+                    tags: Optional[Dict[str, str]] = None,
+                    agent_id: Optional[str] = None,
+                    cause: Optional[Dict[str, str]] = None) -> Dict[str, Any]:
         """
         Create or update an agent.
-        
+
         Args:
-            agent_type: Type of agent (e.g., "chatbot", "workflow", "classifier")  
+            agent_type: Type of agent (e.g., "chatbot", "workflow", "classifier")
             body: Agent state data (any JSON-serializable object)
             tags: Key-value pairs for querying and organization
             agent_id: Specific ID to use (for updates), auto-generated if None
-            
+            cause: Why this change happened, e.g. {"actor": "planner-1", "note": "retrying task"}
+                   Supported keys: actor (agent ID), trigger (commit hash), note (free text)
+
         Returns:
             Created agent object with id, type, body, tags, commit_seq, commit_ts
         """
-        payload = {
+        payload: Dict[str, Any] = {
             "type": agent_type,
             "body": body,
             "tags": tags or {}
         }
         if agent_id:
             payload["id"] = agent_id
-            
+        if cause:
+            payload["cause"] = cause
+
         response = self.session.post(f"{self.base_url}/v1/{self.namespace}/objects", json=payload)
         response.raise_for_status()
         return response.json()
@@ -133,11 +138,12 @@ class AgentStateClient:
             return False
 
     # Legacy API compatibility
-    def put(self, typ: str, body: Dict[str, Any], tags: Optional[Dict[str, str]] = None, 
-            ttl_seconds: Optional[int] = None, id: Optional[str] = None, 
-            idempotency_key: Optional[str] = None) -> Dict[str, Any]:
+    def put(self, typ: str, body: Dict[str, Any], tags: Optional[Dict[str, str]] = None,
+            ttl_seconds: Optional[int] = None, id: Optional[str] = None,
+            idempotency_key: Optional[str] = None,
+            cause: Optional[Dict[str, str]] = None) -> Dict[str, Any]:
         """Legacy method for backward compatibility. Use create_agent() instead."""
-        return self.create_agent(typ, body, tags, id)
+        return self.create_agent(typ, body, tags, id, cause=cause)
 
     def get(self, id: str) -> Dict[str, Any]:
         """Legacy method for backward compatibility. Use get_agent() instead."""
@@ -238,3 +244,42 @@ class AgentStateClient:
         r = requests.post(f"{self.base_url}/v1/{self.namespace}/lease/release", json={"key": key, "owner": owner, "token": token})
         r.raise_for_status()
         return True
+
+    # ── Invariant management ──────────────────────────────────────────────────
+
+    def set_invariant(self, ns: str, rules: List[Dict[str, Any]]) -> Dict[str, Any]:
+        """Set a namespace invariant (predicate spec) that is enforced on every write.
+
+        Args:
+            ns: Namespace to protect.
+            rules: List of rule dicts, e.g.
+                   [{"field": "body.status", "required": True},
+                    {"field": "body.score", "gte": 0, "lte": 1}]
+
+        Returns:
+            The stored spec as returned by the server.
+
+        Raises:
+            requests.HTTPError: On server error (400 for invalid spec, 401/403 for auth).
+        """
+        resp = self.session.post(
+            f"{self.base_url}/admin/namespaces/{ns}/invariants",
+            json={"rules": rules},
+        )
+        resp.raise_for_status()
+        return resp.json()
+
+    def get_invariant(self, ns: str) -> Optional[Dict[str, Any]]:
+        """Retrieve the current invariant spec for a namespace, or None if none is set.
+
+        Args:
+            ns: Namespace to query.
+
+        Returns:
+            The spec dict, or None if no invariant has been configured.
+        """
+        resp = self.session.get(f"{self.base_url}/admin/namespaces/{ns}/invariants")
+        if resp.status_code == 404:
+            return None
+        resp.raise_for_status()
+        return resp.json()

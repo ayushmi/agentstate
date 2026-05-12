@@ -70,17 +70,35 @@ pub trait Storage: Send + Sync + 'static {
     async fn admin_snapshot(&self) -> Result<(String, u64)>;
     async fn admin_manifest(&self) -> Result<serde_json::Value>;
     async fn admin_trim_wal(&self, snapshot_id: &str) -> Result<Vec<String>>;
-    
+
     // Backlog monitoring
     fn backlog_map(&self) -> std::collections::HashMap<String, u64> {
         Default::default()
     }
-    
+
     // Export all objects (for admin dump)
     fn all_objects(&self) -> Vec<Object> {
         Vec::new()
     }
 
+    // Verify hash chain integrity. Returns chain breaks as JSON values.
+    fn verify_chain(&self, _ns: Option<&str>) -> Vec<serde_json::Value> {
+        Vec::new()
+    }
+
+    // Namespace invariant management
+    async fn set_namespace_invariant(
+        &self,
+        _ns: &str,
+        _spec: serde_json::Value,
+    ) -> Result<serde_json::Value> {
+        Err(agentstate_core::StateError::Internal(
+            "not supported".into(),
+        ))
+    }
+    async fn get_namespace_invariant(&self, _ns: &str) -> Result<Option<serde_json::Value>> {
+        Ok(None)
+    }
 }
 
 pub trait WatchHandle: Send {

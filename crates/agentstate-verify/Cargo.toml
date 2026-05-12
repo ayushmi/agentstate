@@ -1,0 +1,13 @@
+[package]
+name = "agentstate-verify"
+version = "0.1.0"
+edition = "2021"
+description = "Temporal property checker for AgentState WAL traces"
+
+[dependencies]
+agentstate-core = { path = "../agentstate-core" }
+agentstate-storage = { path = "../agentstate-storage" }
+serde = { workspace = true }
+serde_json = { workspace = true }
+chrono = { workspace = true }
+anyhow = { workspace = true }

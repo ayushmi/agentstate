@@ -1,0 +1,115 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>AgentState Playground</title>
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body>
+    <div class="container">
+      <header>
+        <h1>AgentState Playground</h1>
+        <p>Try REST endpoints locally or against a hosted server.</p>
+      </header>
+
+      <section class="config">
+        <h2>Configuration</h2>
+        <div class="row">
+          <label for="baseUrl">Base URL</label>
+          <input id="baseUrl" placeholder="http://localhost:8080" />
+        </div>
+        <div class="row">
+          <label for="namespace">Namespace</label>
+          <input id="namespace" placeholder="my-app" />
+        </div>
+        <div class="row">
+          <label for="token">Bearer Token (optional)</label>
+          <input id="token" placeholder="Paste capability token if required" />
+        </div>
+        <div class="buttons">
+          <button id="saveConfig">Save</button>
+          <button id="loadHosted">Use Hosted (fetch token)</button>
+        </div>
+        <p class="hint">Token not required for local dev unless you enabled caps in compose.</p>
+      </section>
+
+      <section class="actions">
+        <h2>Actions</h2>
+        <div class="grid">
+          <div class="card">
+            <h3>Create / Update Agent</h3>
+            <label>Type</label>
+            <input id="putType" placeholder="chatbot" />
+            <label>Body (JSON)</label>
+            <textarea id="putBody">{
+  "name": "CustomerBot",
+  "status": "active"
+}</textarea>
+            <label>Tags (JSON)</label>
+            <textarea id="putTags">{ "team": "customer-success" }</textarea>
+            <div class="buttons">
+              <button id="doPut">PUT</button>
+            </div>
+          </div>
+
+          <div class="card">
+            <h3>Query Agents</h3>
+            <label>Tags (JSON)</label>
+            <textarea id="queryTags">{ "team": "customer-success" }</textarea>
+            <div class="buttons">
+              <button id="doQuery">Query</button>
+            </div>
+          </div>
+
+          <div class="card">
+            <h3>Get by ID</h3>
+            <label>Agent ID</label>
+            <input id="getId" placeholder="01H..." />
+            <div class="buttons">
+              <button id="doGet">GET</button>
+            </div>
+          </div>
+
+          <div class="card">
+            <h3>Watch (SSE)</h3>
+            <div class="buttons">
+              <button id="startWatch">Start</button>
+              <button id="stopWatch">Stop</button>
+            </div>
+            <pre id="watchOut" class="log"></pre>
+          </div>
+        </div>
+      </section>
+
+      <section class="output">
+        <h2>Output</h2>
+        <pre id="out" class="log"></pre>
+      </section>
+
+      <section class="snippets">
+        <h2>SDK Snippets</h2>
+        <div class="grid">
+          <div class="card">
+            <h3>Python</h3>
+            <pre id="pySnippet" class="code"></pre>
+          </div>
+          <div class="card">
+            <h3>TypeScript</h3>
+            <pre id="tsSnippet" class="code"></pre>
+          </div>
+        </div>
+      </section>
+
+      <footer>
+        <p>
+          Docs: <a href="../quickstart.md">Quickstart</a> •
+          API: <code>/v1/{ns}/objects|query|get</code>
+        </p>
+      </footer>
+    </div>
+
+    <script src="script.js"></script>
+  </body>
+  </html>
+

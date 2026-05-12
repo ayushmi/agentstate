@@ -34,6 +34,8 @@ struct Inner {
     // Leases: (ns,key) -> (owner, token, expires)
     leases: HashMap<(String, String), (String, u64, DateTime<Utc>)>,
     idem: HashMap<(String, String), super::traits::IdempotencyRecord>,
+    // Namespace invariants: ns -> predicate spec JSON
+    invariants: HashMap<String, serde_json::Value>,
 }
 
 #[derive(Clone, Default)]
@@ -145,6 +147,47 @@ impl InMemoryStore {
         out
     }
 
+    /// Verify the tamper-evident hash chain for a given namespace (or all namespaces if None).
+    /// Returns a list of chain breaks: (object_id, commit_seq, expected_prev, actual_prev).
+    pub fn verify_chain(&self, ns_filter: Option<&str>) -> Vec<serde_json::Value> {
+        let inner = self.inner.read();
+        let mut breaks = Vec::new();
+        for ((ns, id), versions) in inner.data.iter() {
+            if let Some(f) = ns_filter {
+                if ns != f {
+                    continue;
+                }
+            }
+            let mut sorted = versions.clone();
+            sorted.sort_by_key(|o| o.commit_seq);
+            for i in 1..sorted.len() {
+                let prev = &sorted[i - 1];
+                let cur = &sorted[i];
+                let expected_prev = Some(&prev.commit);
+                if cur.prev_commit.as_ref() != expected_prev {
+                    breaks.push(serde_json::json!({
+                        "ns": ns,
+                        "id": id,
+                        "commit_seq": cur.commit_seq,
+                        "expected_prev": prev.commit,
+                        "actual_prev": cur.prev_commit,
+                    }));
+                }
+            }
+        }
+        breaks
+    }
+
+    pub fn set_invariant(&self, ns: &str, spec: serde_json::Value) {
+        let mut inner = self.inner.write();
+        inner.invariants.insert(ns.to_string(), spec);
+    }
+
+    pub fn get_invariant(&self, ns: &str) -> Option<serde_json::Value> {
+        let inner = self.inner.read();
+        inner.invariants.get(ns).cloned()
+    }
+
     pub fn backlog_map(&self) -> std::collections::HashMap<String, usize> {
         let inner = self.inner.read();
         let mut map: std::collections::HashMap<String, usize> = std::collections::HashMap::new();
@@ -174,7 +217,22 @@ impl Storage for InMemoryStore {
             .and_modify(|c| *c += 1)
             .or_insert(1);
         let commit_seq = *next;
-        let obj = Object::new_with_seq(ns.to_string(), req, commit_seq);
+        // For upserts (req.id is Some), chain prev_commit to the last version.
+        // For new objects (req.id is None), no previous commit exists.
+        let prev_commit = req.id.as_ref().and_then(|id| {
+            inner
+                .data
+                .get(&(ns.to_string(), id.clone()))
+                .and_then(|vs| vs.last())
+                .map(|o| o.commit.clone())
+        });
+        let obj = Object::new_with_seq(ns.to_string(), req, commit_seq, prev_commit.as_ref());
+        // Check namespace invariants before inserting
+        if let Some(spec) = inner.invariants.get(ns) {
+            if let Err(violations) = agentstate_core::invariant::check(spec, &obj) {
+                return Err(agentstate_core::StateError::InvariantViolation(violations));
+            }
+        }
         let key = (obj.ns.clone(), obj.id.clone());
         inner.data.entry(key.clone()).or_default().push(obj.clone());
         // maintain indexes
@@ -399,7 +457,7 @@ impl Storage for InMemoryStore {
     async fn sweep_expired(&self, _retention_secs: u64) -> Result<u64> {
         let now = Utc::now();
         let mut objects_to_cleanup = Vec::new();
-        
+
         // First pass: identify and remove expired objects
         {
             let mut inner = self.inner.write();
@@ -421,13 +479,13 @@ impl Storage for InMemoryStore {
                 }
             }
         } // inner lock is dropped here
-        
+
         // Second pass: cleanup indexes (can be async)
         let removed = objects_to_cleanup.len() as u64;
         for obj in objects_to_cleanup {
             self.cleanup_indexes_for(&obj).await;
         }
-        
+
         Ok(removed)
     }
 
@@ -574,7 +632,7 @@ impl Storage for InMemoryStore {
     async fn admin_trim_wal(&self, _snapshot_id: &str) -> Result<Vec<String>> {
         Err(StateError::Invalid("not persistent".into()))
     }
-    
+
     fn backlog_map(&self) -> std::collections::HashMap<String, u64> {
         let inner = self.inner.read();
         let mut map: std::collections::HashMap<String, u64> = std::collections::HashMap::new();
@@ -592,7 +650,7 @@ impl Storage for InMemoryStore {
         }
         map
     }
-    
+
     fn all_objects(&self) -> Vec<Object> {
         let inner = self.inner.read();
         let mut objects = Vec::new();
@@ -604,6 +662,25 @@ impl Storage for InMemoryStore {
         objects
     }
 
+    fn verify_chain(&self, ns: Option<&str>) -> Vec<serde_json::Value> {
+        InMemoryStore::verify_chain(self, ns)
+    }
+
+    async fn set_namespace_invariant(
+        &self,
+        ns: &str,
+        spec: serde_json::Value,
+    ) -> agentstate_core::Result<serde_json::Value> {
+        InMemoryStore::set_invariant(self, ns, spec.clone());
+        Ok(spec)
+    }
+
+    async fn get_namespace_invariant(
+        &self,
+        ns: &str,
+    ) -> agentstate_core::Result<Option<serde_json::Value>> {
+        Ok(InMemoryStore::get_invariant(self, ns))
+    }
 }
 
 struct MemWatch {

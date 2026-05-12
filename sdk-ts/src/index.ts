@@ -2,6 +2,32 @@ import axios, { AxiosInstance } from 'axios';
 
 export type Tags = Record<string, string>;
 
+/** A single rule in a namespace invariant spec. */
+export interface InvariantRule {
+  field: string;                      // "body.<key>" or "tags.<key>"
+  required?: boolean;
+  type?: 'string' | 'number' | 'bool' | 'array' | 'object';
+  eq?: any;
+  one_of?: any[];
+  gte?: number;
+  lte?: number;
+  gt?: number;
+  lt?: number;
+  regex?: string;
+}
+
+/** Namespace invariant spec — a set of rules enforced on every write. */
+export interface InvariantSpec {
+  rules: InvariantRule[];
+}
+
+/** Records why a state change happened. All fields are optional. */
+export interface Cause {
+  actor?: string;   // agent ID making this change
+  trigger?: string; // commit hash that triggered this change
+  note?: string;    // human-readable reason
+}
+
 export interface Agent {
   id: string;
   type: string;
@@ -9,6 +35,7 @@ export interface Agent {
   tags: Tags;
   commit_seq: number;
   commit_ts: string;
+  cause?: Cause;
 }
 
 /**
@@ -81,26 +108,26 @@ export class AgentStateClient {
    * @returns Created agent object with id, type, body, tags, commit_seq, commit_ts
    */
   async createAgent(
-    agentType: string, 
-    body: any, 
-    tags?: Tags, 
-    agentId?: string
+    agentType: string,
+    body: any,
+    tags?: Tags,
+    agentId?: string,
+    cause?: Cause
   ): Promise<Agent> {
     const payload: any = {
       type: agentType,
       body,
       tags: tags || {}
     };
-    
-    if (agentId) {
-      payload.id = agentId;
-    }
+
+    if (agentId) payload.id = agentId;
+    if (cause) payload.cause = cause;
 
     const response = await this.http.post(
       `${this.baseUrl}/v1/${this.namespace}/objects`,
       payload
     );
-    
+
     return response.data;
   }
 
@@ -163,6 +190,33 @@ export class AgentStateClient {
     }
   }
 
+  // ── Invariant management ────────────────────────────────────────────────────
+
+  /**
+   * Set a namespace invariant that is enforced on every write.
+   * @param ns - Namespace to protect (can differ from the client's namespace).
+   * @param rules - Array of rule objects, e.g. [{field:"body.status", required:true}]
+   * @returns The stored spec as returned by the server.
+   */
+  async setInvariant(ns: string, rules: InvariantRule[]): Promise<InvariantSpec> {
+    const resp = await this.http.post(`${this.baseUrl}/admin/namespaces/${ns}/invariants`, { rules });
+    return resp.data;
+  }
+
+  /**
+   * Retrieve the current invariant spec for a namespace.
+   * @returns The spec, or null if no invariant is set.
+   */
+  async getInvariant(ns: string): Promise<InvariantSpec | null> {
+    try {
+      const resp = await this.http.get(`${this.baseUrl}/admin/namespaces/${ns}/invariants`);
+      return resp.data;
+    } catch (e: any) {
+      if (e?.response?.status === 404) return null;
+      throw e;
+    }
+  }
+
   // Legacy API compatibility
   private get base(): string {
     return `${this.baseUrl}/v1/${this.namespace}`;
@@ -171,8 +225,8 @@ export class AgentStateClient {
   /**
    * @deprecated Use createAgent() instead
    */
-  async put(type: string, body: any, tags?: Tags, ttl_seconds?: number, id?: string): Promise<Agent> {
-    return this.createAgent(type, body, tags, id);
+  async put(type: string, body: any, tags?: Tags, ttl_seconds?: number, id?: string, cause?: Cause): Promise<Agent> {
+    return this.createAgent(type, body, tags, id, cause);
   }
 
   /**

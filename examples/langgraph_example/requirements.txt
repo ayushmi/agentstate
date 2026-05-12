@@ -1,0 +1,4 @@
+agentstate>=1.0.2
+langgraph>=0.1.0
+langchain-core>=0.1.0
+langgraph-agentstate>=0.1.0

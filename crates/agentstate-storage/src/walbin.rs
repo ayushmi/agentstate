@@ -25,6 +25,7 @@ pub enum RecType {
     LeaseRenew = 4,
     LeaseRelease = 5,
     Idempotency = 6,
+    InvariantSet = 7,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -62,6 +63,10 @@ pub enum RecBody {
         key: String,
         response: serde_json::Value,
         expires_ts: i64,
+    },
+    InvariantSet {
+        ns: String,
+        spec: serde_json::Value,
     },
 }
 
@@ -254,6 +259,7 @@ impl WalWriter {
             RecBody::LeaseRenew { .. } => RecType::LeaseRenew,
             RecBody::LeaseRelease { .. } => RecType::LeaseRelease,
             RecBody::Idempotency { .. } => RecType::Idempotency,
+            RecBody::InvariantSet { .. } => RecType::InvariantSet,
         }
     }
 }

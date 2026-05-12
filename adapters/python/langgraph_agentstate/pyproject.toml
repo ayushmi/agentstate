@@ -1,0 +1,21 @@
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.backends.legacy:build"
+
+[project]
+name = "langgraph-agentstate"
+version = "0.1.0"
+description = "LangGraph checkpoint saver backed by AgentState"
+readme = "README.md"
+requires-python = ">=3.9"
+dependencies = [
+    "agentstate>=1.0.2",
+    "langgraph>=0.1.0",
+    "langchain-core>=0.1.0",
+]
+
+[project.optional-dependencies]
+dev = ["pytest", "pytest-asyncio"]
+
+[project.urls]
+Homepage = "https://github.com/ayushmi/agentstate"

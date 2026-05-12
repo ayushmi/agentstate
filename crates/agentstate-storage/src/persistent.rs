@@ -47,6 +47,9 @@ impl PersistentStore {
                 | RecBody::Idempotency { .. } => {
                     // TODO: apply to lease and idempotency stores; left as an exercise for now
                 }
+                RecBody::InvariantSet { ns, spec } => {
+                    mem.set_invariant(&ns, spec);
+                }
             }
         }
         Ok(Self {
@@ -274,6 +277,33 @@ impl Storage for PersistentStore {
         let m = self.manifest.read().clone();
         Ok(serde_json::to_value(m).unwrap())
     }
+    fn verify_chain(&self, ns: Option<&str>) -> Vec<serde_json::Value> {
+        self.mem.verify_chain(ns)
+    }
+
+    async fn set_namespace_invariant(
+        &self,
+        ns: &str,
+        spec: serde_json::Value,
+    ) -> Result<serde_json::Value> {
+        self.mem.set_invariant(ns, spec.clone());
+        {
+            let wal = self.wal.lock().await;
+            let body = RecBody::InvariantSet {
+                ns: ns.to_string(),
+                spec: spec.clone(),
+            };
+            wal.append(0, Utc::now().timestamp(), &body)
+                .await
+                .map_err(|e| StateError::Internal(e.to_string()))?;
+        }
+        Ok(spec)
+    }
+
+    async fn get_namespace_invariant(&self, ns: &str) -> Result<Option<serde_json::Value>> {
+        Ok(self.mem.get_invariant(ns))
+    }
+
     async fn admin_trim_wal(&self, snapshot_id: &str) -> Result<Vec<String>> {
         let mut m = self.manifest.write();
         if m.current_snapshot.as_deref() != Some(snapshot_id) {
