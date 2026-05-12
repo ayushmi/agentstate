@@ -33,7 +33,11 @@ pub fn check(spec: &Value, obj: &Object) -> Result<(), Vec<String>> {
         let value = resolve_field(field, obj);
 
         // required
-        if rule.get("required").and_then(|v| v.as_bool()).unwrap_or(false) {
+        if rule
+            .get("required")
+            .and_then(|v| v.as_bool())
+            .unwrap_or(false)
+        {
             if value.is_none() || value == Some(Value::Null) {
                 violations.push(format!("field '{}' is required but missing or null", field));
                 continue;
@@ -88,12 +92,18 @@ pub fn check(spec: &Value, obj: &Object) -> Result<(), Vec<String>> {
         if let Some(n) = val.as_f64() {
             if let Some(gte) = rule.get("gte").and_then(|v| v.as_f64()) {
                 if n < gte {
-                    violations.push(format!("field '{}' must be >= {} but got {}", field, gte, n));
+                    violations.push(format!(
+                        "field '{}' must be >= {} but got {}",
+                        field, gte, n
+                    ));
                 }
             }
             if let Some(lte) = rule.get("lte").and_then(|v| v.as_f64()) {
                 if n > lte {
-                    violations.push(format!("field '{}' must be <= {} but got {}", field, lte, n));
+                    violations.push(format!(
+                        "field '{}' must be <= {} but got {}",
+                        field, lte, n
+                    ));
                 }
             }
             if let Some(gt) = rule.get("gt").and_then(|v| v.as_f64()) {
@@ -161,9 +171,12 @@ fn simple_regex_match(pattern: &str, s: &str) -> Result<bool, String> {
     let anchored_end = pattern.ends_with('$');
     let core = pattern.trim_start_matches('^').trim_end_matches('$');
 
-    let has_specials = core
-        .chars()
-        .any(|c| matches!(c, '.' | '+' | '*' | '[' | '(' | ')' | '?' | '{' | '}' | '|' | '\\'));
+    let has_specials = core.chars().any(|c| {
+        matches!(
+            c,
+            '.' | '+' | '*' | '[' | '(' | ')' | '?' | '{' | '}' | '|' | '\\'
+        )
+    });
 
     if has_specials {
         return Err(format!(

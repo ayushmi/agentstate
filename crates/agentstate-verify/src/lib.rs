@@ -1,5 +1,5 @@
-pub mod predicate;
 pub mod ltl;
+pub mod predicate;
 
 use agentstate_core::Object;
 use agentstate_storage::walbin;
@@ -86,7 +86,10 @@ pub fn load_properties(paths: &[String]) -> anyhow::Result<Vec<Property>> {
 }
 
 /// Replay a WAL directory into a version map: (ns, id) -> Vec<Object> sorted by commit_seq.
-pub fn replay_wal(wal_dir: &str, ns_filter: Option<&str>) -> HashMap<(String, String), Vec<Object>> {
+pub fn replay_wal(
+    wal_dir: &str,
+    ns_filter: Option<&str>,
+) -> HashMap<(String, String), Vec<Object>> {
     let recs = walbin::replay(wal_dir).unwrap_or_default();
     let mut map: HashMap<(String, String), Vec<Object>> = HashMap::new();
 
@@ -124,7 +127,11 @@ pub fn run(wal_dir: &str, ns_filter: Option<&str>, properties: &[Property]) -> V
             // Apply forall selector
             if let Some(selector) = &prop.forall {
                 if let Some(type_filter) = selector.get("type").and_then(|v| v.as_str()) {
-                    if !versions.first().map(|o| o.r#type == type_filter).unwrap_or(false) {
+                    if !versions
+                        .first()
+                        .map(|o| o.r#type == type_filter)
+                        .unwrap_or(false)
+                    {
                         continue;
                     }
                 }

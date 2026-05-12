@@ -457,7 +457,7 @@ impl Storage for InMemoryStore {
     async fn sweep_expired(&self, _retention_secs: u64) -> Result<u64> {
         let now = Utc::now();
         let mut objects_to_cleanup = Vec::new();
-        
+
         // First pass: identify and remove expired objects
         {
             let mut inner = self.inner.write();
@@ -479,13 +479,13 @@ impl Storage for InMemoryStore {
                 }
             }
         } // inner lock is dropped here
-        
+
         // Second pass: cleanup indexes (can be async)
         let removed = objects_to_cleanup.len() as u64;
         for obj in objects_to_cleanup {
             self.cleanup_indexes_for(&obj).await;
         }
-        
+
         Ok(removed)
     }
 
@@ -632,7 +632,7 @@ impl Storage for InMemoryStore {
     async fn admin_trim_wal(&self, _snapshot_id: &str) -> Result<Vec<String>> {
         Err(StateError::Invalid("not persistent".into()))
     }
-    
+
     fn backlog_map(&self) -> std::collections::HashMap<String, u64> {
         let inner = self.inner.read();
         let mut map: std::collections::HashMap<String, u64> = std::collections::HashMap::new();
@@ -650,7 +650,7 @@ impl Storage for InMemoryStore {
         }
         map
     }
-    
+
     fn all_objects(&self) -> Vec<Object> {
         let inner = self.inner.read();
         let mut objects = Vec::new();
@@ -666,15 +666,21 @@ impl Storage for InMemoryStore {
         InMemoryStore::verify_chain(self, ns)
     }
 
-    async fn set_namespace_invariant(&self, ns: &str, spec: serde_json::Value) -> agentstate_core::Result<serde_json::Value> {
+    async fn set_namespace_invariant(
+        &self,
+        ns: &str,
+        spec: serde_json::Value,
+    ) -> agentstate_core::Result<serde_json::Value> {
         InMemoryStore::set_invariant(self, ns, spec.clone());
         Ok(spec)
     }
 
-    async fn get_namespace_invariant(&self, ns: &str) -> agentstate_core::Result<Option<serde_json::Value>> {
+    async fn get_namespace_invariant(
+        &self,
+        ns: &str,
+    ) -> agentstate_core::Result<Option<serde_json::Value>> {
         Ok(InMemoryStore::get_invariant(self, ns))
     }
-
 }
 
 struct MemWatch {

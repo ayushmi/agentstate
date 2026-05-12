@@ -9,7 +9,6 @@
 ///   and/or:      conjunction/disjunction of multiple formulas
 ///
 /// State predicates (leaf nodes) are handled by `predicate::eval`.
-
 use crate::{predicate, Violation};
 use agentstate_core::Object;
 use serde_json::Value;

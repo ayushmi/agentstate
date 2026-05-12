@@ -23,11 +23,11 @@ pub struct VecField {
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct Cause {
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub actor: Option<String>,     // agent ID making this change
+    pub actor: Option<String>, // agent ID making this change
     #[serde(skip_serializing_if = "Option::is_none")]
     pub trigger: Option<CommitId>, // commit hash that triggered this change
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub note: Option<String>,      // human-readable reason
+    pub note: Option<String>, // human-readable reason
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -78,7 +78,14 @@ impl Object {
         let ts = Utc::now();
         // Include commit_seq and prev_commit in the hash seed so that any WAL
         // reordering or record replacement is cryptographically detectable.
-        let mut seed = format!("{}:{}:{}:{}:{}", &ns, &id, req.r#type, ts.to_rfc3339(), commit_seq);
+        let mut seed = format!(
+            "{}:{}:{}:{}:{}",
+            &ns,
+            &id,
+            req.r#type,
+            ts.to_rfc3339(),
+            commit_seq
+        );
         if let Some(prev) = prev_commit {
             seed.push(':');
             seed.push_str(prev);

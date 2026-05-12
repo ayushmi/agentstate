@@ -1,6 +1,5 @@
 /// State predicate evaluator — reuses the same DSL as the Layer 2 invariant checker.
 /// Returns true if the predicate holds for the given object's JSON representation.
-
 use agentstate_core::Object;
 use serde_json::Value;
 
@@ -33,7 +32,11 @@ pub fn eval(pred: &Value, obj: &Object) -> bool {
     let val = resolve_field(field, obj);
 
     // required
-    if pred.get("required").and_then(|v| v.as_bool()).unwrap_or(false) {
+    if pred
+        .get("required")
+        .and_then(|v| v.as_bool())
+        .unwrap_or(false)
+    {
         if val.is_none() || val == Some(Value::Null) {
             return false;
         }

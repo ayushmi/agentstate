@@ -1,7 +1,7 @@
 use agentstate_storage::walbin;
+use agentstate_verify;
 use anyhow::Result;
 use clap::{Parser, Subcommand};
-use agentstate_verify;
 
 #[derive(Parser)]
 #[command(name = "agentstate")]
@@ -111,7 +111,13 @@ fn main() -> Result<()> {
             let report = serde_json::json!({ "last_seq": last_seq, "objects": objs.len(), "crc_ok": true, "index_consistent": true });
             std::fs::write(out, serde_json::to_vec_pretty(&report)?)?;
         }
-        Cmd::Verify { dir, ns, property, output, fail_on_violation } => {
+        Cmd::Verify {
+            dir,
+            ns,
+            property,
+            output,
+            fail_on_violation,
+        } => {
             if property.is_empty() {
                 eprintln!("No property files specified. Use --property <path.ltl.json>");
                 std::process::exit(2);
@@ -127,14 +133,20 @@ fn main() -> Result<()> {
                 std::process::exit(1);
             }
         }
-        Cmd::Replay { object_id, dir, ns, snapshot } => {
+        Cmd::Replay {
+            object_id,
+            dir,
+            ns,
+            snapshot,
+        } => {
             let mut versions: Vec<serde_json::Value> = Vec::new();
 
             // 1. Seed from snapshot if provided
             if let Some(snap_path) = snapshot {
                 for obj in read_snapshot(&snap_path).unwrap_or_default() {
                     let id_match = obj.get("id").and_then(|v| v.as_str()) == Some(&object_id);
-                    let ns_match = ns.as_deref()
+                    let ns_match = ns
+                        .as_deref()
                         .map(|n| obj.get("ns").and_then(|v| v.as_str()) == Some(n))
                         .unwrap_or(true);
                     if id_match && ns_match {
@@ -175,7 +187,11 @@ fn main() -> Result<()> {
                 std::process::exit(1);
             }
 
-            println!("History for '{}' ({} version(s)):", object_id, versions.len());
+            println!(
+                "History for '{}' ({} version(s)):",
+                object_id,
+                versions.len()
+            );
             println!("{}", "─".repeat(60));
 
             let mut prev_body: Option<serde_json::Value> = None;
@@ -183,11 +199,19 @@ fn main() -> Result<()> {
                 let ts = obj.get("ts").and_then(|v| v.as_str()).unwrap_or("unknown");
                 let seq = obj.get("commit_seq").and_then(|v| v.as_u64()).unwrap_or(0);
 
-                if obj.get("_deleted").and_then(|v| v.as_bool()).unwrap_or(false) {
+                if obj
+                    .get("_deleted")
+                    .and_then(|v| v.as_bool())
+                    .unwrap_or(false)
+                {
                     println!("[v{}] ts={} DELETED", i + 1, ts);
                 } else {
                     let commit = obj.get("commit").and_then(|v| v.as_str()).unwrap_or("?");
-                    let short_commit = if commit.len() >= 8 { &commit[..8] } else { commit };
+                    let short_commit = if commit.len() >= 8 {
+                        &commit[..8]
+                    } else {
+                        commit
+                    };
                     println!("[v{}] ts={} commit={} seq={}", i + 1, ts, short_commit, seq);
 
                     if let Some(cur) = obj.get("body") {

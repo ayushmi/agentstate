@@ -9,9 +9,8 @@ use axum::{
     Json, Router,
 };
 use once_cell::sync::Lazy;
-use opentelemetry_sdk;
 use opentelemetry_otlp::WithExportConfig;
-use tracing_subscriber::prelude::*;
+use opentelemetry_sdk;
 use prometheus::{
     Encoder, HistogramVec, IntCounter, IntCounterVec, IntGaugeVec, Registry, TextEncoder,
 };
@@ -20,12 +19,13 @@ use std::net::SocketAddr;
 use std::sync::Arc;
 use tower_http::cors::{Any, CorsLayer};
 use tracing::{info, Level};
+use tracing_subscriber::prelude::*;
 mod metrics;
-use metrics::{WATCH_CLIENTS, WATCH_EVENTS_TOTAL, WATCH_RESUMES_TOTAL};
+use axum::body::Bytes;
 use futures::Stream;
 use hmac::{Hmac, Mac};
+use metrics::{WATCH_CLIENTS, WATCH_EVENTS_TOTAL, WATCH_RESUMES_TOTAL};
 use sha2::Sha256;
-use axum::body::Bytes;
 use std::path::Path as StdPath;
 use std::pin::Pin;
 use tonic::{transport::Server as GrpcServer, Request, Response as TonicResponse, Status};
@@ -93,7 +93,7 @@ async fn main() -> anyhow::Result<()> {
         idem: Arc::new(parking_lot::RwLock::new(std::collections::HashMap::new())),
         qps: Arc::new(parking_lot::RwLock::new(std::collections::HashMap::new())),
     };
-    
+
     let store_for_backlog = state.store.clone();
     let sweeper_state = state.clone();
     let snapshot_state = state.clone();
@@ -164,8 +164,14 @@ async fn main() -> anyhow::Result<()> {
         .route("/admin/trim-wal", post(admin_trim_wal))
         .route("/admin/explain-query", post(admin_explain_query))
         .route("/admin/dump", get(admin_dump))
-        .route("/admin/namespaces/:ns/chain-verify", get(admin_chain_verify))
-        .route("/admin/namespaces/:ns/invariants", post(admin_set_invariant).get(admin_get_invariant))
+        .route(
+            "/admin/namespaces/:ns/chain-verify",
+            get(admin_chain_verify),
+        )
+        .route(
+            "/admin/namespaces/:ns/invariants",
+            post(admin_set_invariant).get(admin_get_invariant),
+        )
         .route("/metrics", get(metrics))
         .with_state(state)
         .layer(
@@ -248,9 +254,7 @@ async fn main() -> anyhow::Result<()> {
         })
     };
     let grpc = {
-        let svc = AgentStateGrpc {
-            state: grpc_state,
-        };
+        let svc = AgentStateGrpc { state: grpc_state };
         let mut builder = GrpcServer::builder();
         if use_tls {
             let cert = std::fs::read(std::env::var("TLS_CERT_PATH").unwrap()).expect("read cert");
@@ -669,8 +673,9 @@ async fn admin_dump(State(app): State<AppState>, headers: HeaderMap) -> impl Int
         }
         Err(e) => (
             StatusCode::INTERNAL_SERVER_ERROR,
-            Json(json!({"error": e.to_string()}))
-        ).into_response(),
+            Json(json!({"error": e.to_string()})),
+        )
+            .into_response(),
     }
 }
 
@@ -684,13 +689,22 @@ async fn admin_chain_verify(
     }
     let breaks = app.store.verify_chain(Some(&ns));
     let ok = breaks.is_empty();
-    let objects_checked = app.store.all_objects().iter().filter(|o| o.ns == ns).count();
-    (StatusCode::OK, Json(json!({
-        "ok": ok,
-        "namespace": ns,
-        "objects_checked": objects_checked,
-        "breaks": breaks,
-    }))).into_response()
+    let objects_checked = app
+        .store
+        .all_objects()
+        .iter()
+        .filter(|o| o.ns == ns)
+        .count();
+    (
+        StatusCode::OK,
+        Json(json!({
+            "ok": ok,
+            "namespace": ns,
+            "objects_checked": objects_checked,
+            "breaks": breaks,
+        })),
+    )
+        .into_response()
 }
 
 async fn admin_set_invariant(
@@ -703,11 +717,19 @@ async fn admin_set_invariant(
         return resp.into_response();
     }
     if spec.get("rules").and_then(|r| r.as_array()).is_none() {
-        return (StatusCode::BAD_REQUEST, Json(json!({"error": "spec must have a 'rules' array"}))).into_response();
+        return (
+            StatusCode::BAD_REQUEST,
+            Json(json!({"error": "spec must have a 'rules' array"})),
+        )
+            .into_response();
     }
     match app.store.set_namespace_invariant(&ns, spec).await {
         Ok(stored) => (StatusCode::OK, Json(stored)).into_response(),
-        Err(e) => (StatusCode::INTERNAL_SERVER_ERROR, Json(json!({"error": e.to_string()}))).into_response(),
+        Err(e) => (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(json!({"error": e.to_string()})),
+        )
+            .into_response(),
     }
 }
 
@@ -721,8 +743,16 @@ async fn admin_get_invariant(
     }
     match app.store.get_namespace_invariant(&ns).await {
         Ok(Some(spec)) => (StatusCode::OK, Json(spec)).into_response(),
-        Ok(None) => (StatusCode::NOT_FOUND, Json(json!({"error": "no invariant set for namespace"}))).into_response(),
-        Err(e) => (StatusCode::INTERNAL_SERVER_ERROR, Json(json!({"error": e.to_string()}))).into_response(),
+        Ok(None) => (
+            StatusCode::NOT_FOUND,
+            Json(json!({"error": "no invariant set for namespace"})),
+        )
+            .into_response(),
+        Err(e) => (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(json!({"error": e.to_string()})),
+        )
+            .into_response(),
     }
 }
 
@@ -925,9 +955,21 @@ impl agentstate_v1::agent_state_server::AgentState for AgentStateGrpc {
             },
             parents: req.parents,
             cause: req.cause.map(|c| agentstate_core::Cause {
-                actor: if c.actor.is_empty() { None } else { Some(c.actor) },
-                trigger: if c.trigger.is_empty() { None } else { Some(c.trigger) },
-                note: if c.note.is_empty() { None } else { Some(c.note) },
+                actor: if c.actor.is_empty() {
+                    None
+                } else {
+                    Some(c.actor)
+                },
+                trigger: if c.trigger.is_empty() {
+                    None
+                } else {
+                    Some(c.trigger)
+                },
+                note: if c.note.is_empty() {
+                    None
+                } else {
+                    Some(c.note)
+                },
             }),
         };
         let o = self
@@ -975,7 +1017,10 @@ impl agentstate_v1::agent_state_server::AgentState for AgentStateGrpc {
                 None
             } else {
                 Some(agentstate_core::JsonPathFilter {
-                    equals: std::collections::BTreeMap::from([("$".to_string(), serde_json::Value::String(req.jsonpath))]),
+                    equals: std::collections::BTreeMap::from([(
+                        "$".to_string(),
+                        serde_json::Value::String(req.jsonpath),
+                    )]),
                 })
             },
             vector: None,

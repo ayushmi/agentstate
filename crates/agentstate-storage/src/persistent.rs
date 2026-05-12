@@ -281,11 +281,18 @@ impl Storage for PersistentStore {
         self.mem.verify_chain(ns)
     }
 
-    async fn set_namespace_invariant(&self, ns: &str, spec: serde_json::Value) -> Result<serde_json::Value> {
+    async fn set_namespace_invariant(
+        &self,
+        ns: &str,
+        spec: serde_json::Value,
+    ) -> Result<serde_json::Value> {
         self.mem.set_invariant(ns, spec.clone());
         {
             let wal = self.wal.lock().await;
-            let body = RecBody::InvariantSet { ns: ns.to_string(), spec: spec.clone() };
+            let body = RecBody::InvariantSet {
+                ns: ns.to_string(),
+                spec: spec.clone(),
+            };
             wal.append(0, Utc::now().timestamp(), &body)
                 .await
                 .map_err(|e| StateError::Internal(e.to_string()))?;
