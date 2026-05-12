@@ -1,174 +1,100 @@
-# 🤖 AgentState v1.0.0
-**Firebase for AI Agents** — Persistent, verifiable state management for AI applications
+# AgentState v1.2.0
+**Persistent, formally verifiable state management for AI agents**
 
 [![Docker Build](https://img.shields.io/badge/docker-ready-blue)](#docker-deployment)
 [![API Status](https://img.shields.io/badge/api-stable-green)](#api-reference)
 [![Load Tested](https://img.shields.io/badge/load%20tested-1400%20ops%2Fs-brightgreen)](#performance)
 [![Formally Verifiable](https://img.shields.io/badge/formally-verifiable-purple)](#-formal-verifiability)
+[![Claim Verification](https://img.shields.io/badge/claim-verification-orange)](#-claim-verification)
 [![Python SDK](https://img.shields.io/badge/python-pypi-blue)](https://pypi.org/project/agentstate/)
 [![Node.js SDK](https://img.shields.io/badge/nodejs-npm-green)](https://www.npmjs.com/package/agentstate)
 
-AgentState provides a simple, scalable way to store and manage AI agent state with real-time updates, rich querying, built-in persistence, and cryptographic behavioral proof. Think Firebase for your AI agents — with the auditability of a blockchain.
+AgentState gives AI agents a persistent, queryable home for their state — with cryptographic behavioral proof built in from the ground up. Think Firebase for AI agents, with the auditability of a formal system.
 
-**🚀 Key Features:**
-- **Zero-config setup** — Docker one-liner gets you started
-- **Language agnostic** — HTTP/gRPC APIs + Python/Node.js/Go SDKs
-- **High performance** — 1,400+ ops/sec with crash-safe persistence
-- **Real-time queries** — Find agents by tags, get live updates
-- **Production ready** — Load tested, monitored, Kubernetes friendly
-- **Formally verifiable** — Prove your agents always behave correctly
+**What makes it different:**
+- Every write is hash-chained — tampering is cryptographically detectable
+- Runtime invariants reject bad state before it's stored
+- Temporal (LTL) properties checked over the full WAL history
+- Claims your agents make can be formally proved, not just logged
 
-## ✨ Features
+---
 
-- 🔄 **Real-time state updates** - Subscribe to agent state changes
-- 🏷️ **Rich querying** - Query agents by tags and attributes
-- 💾 **Persistent storage** - Crash-safe WAL + snapshots
-- ⚡ **High performance** - 1,400+ ops/sec, ~15ms latency
-- 🐳 **Production ready** - Docker, Kubernetes, monitoring
-- 🔌 **Simple API** - HTTP REST + gRPC, language agnostic
-- 🔐 **Tamper-evident** - blake3 hash chain across every commit
-- 📋 **Runtime invariants** - Reject bad writes before they happen
-- 🔬 **Temporal verification** - LTL property checking over full WAL traces
+## Features
 
-## 🚀 Quick Start
+- **Real-time state** — subscribe to agent state changes over SSE or gRPC
+- **Rich querying** — filter by tags, JSONPath, time-travel to past states
+- **Crash-safe persistence** — WAL + snapshots, 1,400+ ops/sec
+- **Tamper-evident** — blake3 hash chain across every commit
+- **Runtime invariants** — reject invalid writes before they happen
+- **Temporal verification** — LTL property checking over WAL traces, in CI
+- **Claim verification** — formally prove what your agents assert, not just observe it
+- **Domain packs** — pre-built formal reasoning for healthcare, finance, tax, legal
+- **Challenge protocol** — anyone can formally contest any proof
+- **Language agnostic** — HTTP/gRPC + Python, TypeScript, Go SDKs
 
-Try it in your browser: see the Playground at `docs/playground/index.html` (works great with a local server on :8080). For a hosted path with simple billing, use the gateway in `gateway/` and click “Use Hosted (fetch token)” in the Playground.
+---
 
-### 1. Start AgentState Server
+## Quick Start
 
-**Option A: Using Docker (Recommended)**
 ```bash
-# Quick start - no auth required
 docker run -p 8080:8080 ayushmi/agentstate:latest
-
-# With persistent storage
-docker run -p 8080:8080 -p 9090:9090 \
-  -e DATA_DIR=/data \
-  -v agentstate-data:/data \
-  ayushmi/agentstate:latest
-
-# Test it works
-curl http://localhost:8080/health
 ```
 
-**Option B: Using Docker Compose (Full Setup)**
-```bash
-git clone https://github.com/ayushmi/agentstate.git
-cd agentstate
-docker-compose up -d
-
-# Generate auth token for testing (optional)
-export AGENTSTATE_API_KEY=$(python scripts/generate_cap_token.py \
-  --kid active --secret dev-secret \
-  --ns my-app --verb put --verb get --verb delete --verb query --verb lease)
-```
-
-### 2. Use in Your Application
-
-**Python SDK:**
-```bash
-pip install agentstate
-```
 ```python
 from agentstate import AgentStateClient
 
-client = AgentStateClient(base_url='http://localhost:8080', namespace='my-app')
+client = AgentStateClient("http://localhost:8080", "production")
 
-# Create agent
 agent = client.create_agent(
-    agent_type='chatbot',
-    body={'name': 'CustomerBot', 'status': 'active'},
-    tags={'team': 'customer-success'}
+    agent_type="chatbot",
+    body={"name": "CustomerBot", "status": "active"},
+    tags={"team": "support"},
 )
-print(f"Created agent: {agent['id']}")
+print(agent["id"])
 
-# Query agents  
-agents = client.query_agents(tags={'team': 'customer-success'})
-print(f"Found {len(agents)} customer success agents")
-
-# Get specific agent
-agent = client.get_agent(agent_id)
-print(f"Agent status: {agent['body']['status']}")
+agents = client.query_agents(tags={"team": "support"})
 ```
 
-**Node.js SDK:**
 ```bash
+# TypeScript
 npm install agentstate
-```
-```javascript
-import { AgentStateClient } from 'agentstate';
 
-const client = new AgentStateClient({
-    baseUrl: 'http://localhost:8080',
-    namespace: 'my-app'
-});
-
-// Create agent
-const agent = await client.createAgent({
-    type: 'workflow',
-    body: {name: 'DataProcessor', status: 'idle'},
-    tags: {capability: 'data-processing'}
-});
-
-// Update agent state
-const updatedAgent = await client.updateAgent(agent.id, {
-    body: {name: 'DataProcessor', status: 'processing', currentJob: 'analytics'}
-});
-
-console.log(`Agent ${agent.id} status: ${updatedAgent.body.status}`);
+# Go
+go get github.com/ayushmi/agentstate/sdk-go/agentstate
 ```
 
-**Raw HTTP API:**
-```bash
-# Create agent
-curl -X POST http://localhost:8080/v1/my-app/objects \
-  -H "Content-Type: application/json" \
-  -d '{"type": "chatbot", "body": {"name": "Bot1"}, "tags": {"env": "prod"}}'
+---
 
-# Query agents
-curl -X POST http://localhost:8080/v1/my-app/query \
-  -H "Content-Type: application/json" \
-  -d '{"tags": {"env": "prod"}}'
-```
+## Formal Verifiability
 
-## 🔬 Formal Verifiability
-
-AgentState is the only open-source AI agent state store that can **prove** your agents behave correctly. Three complementary layers:
+AgentState is the only open-source AI agent state store with four complementary layers of formal verification.
 
 ### Layer 1 — Tamper-Evident Hash Chain
 
-Every write extends a blake3 hash chain. Each commit's hash includes the previous commit hash and a monotonic sequence number, making any WAL tampering or reordering cryptographically detectable.
+Every write extends a blake3 chain. Each commit includes `prev_commit` + monotonic sequence — reordering or replacing any WAL record breaks the chain.
 
 ```bash
-# Verify the full chain for a namespace
 curl http://localhost:8080/admin/namespaces/production/chain-verify
-# → { "ok": true, "objects_checked": 1842, "breaks": [] }
+# { "ok": true, "objects_checked": 1842, "breaks": [] }
 ```
-
-Objects include a `prev_commit` field linking back to the previous version — giving you a full provenance trail for every agent.
 
 ### Layer 2 — Runtime Invariant Assertions
 
-Define a predicate spec for a namespace. Every write is validated before it's accepted — violations are rejected with a structured 409.
+Invariant specs are enforced before every write. Violations are rejected with a structured 409.
 
 ```bash
-# Set invariant: status must be one of these values, score must be in [0, 1]
 curl -X POST http://localhost:8080/admin/namespaces/production/invariants \
-  -H "Content-Type: application/json" \
   -d '{
     "rules": [
-      { "field": "body.status", "required": true, "one_of": ["active", "idle", "stopped"] },
+      { "field": "body.status", "one_of": ["active", "idle", "stopped"] },
       { "field": "body.score",  "gte": 0.0, "lte": 1.0 },
-      { "field": "body.agent_id", "required": true, "type": "string" }
+      { "field": "body.agent_id", "required": true }
     ]
   }'
 ```
 
-**Supported predicates:** `required`, `type`, `eq`, `one_of`, `gte`/`lte`/`gt`/`lt`, `regex`
+Supported predicates: `required`, `type`, `eq`, `one_of`, `gte`/`lte`/`gt`/`lt`, `regex`. Specs are WAL-persisted and survive restarts.
 
-Specs are WAL-persisted and replayed on restart — invariants survive server crashes.
-
-**Python SDK:**
 ```python
 client.set_invariant("production", [
     {"field": "body.status", "one_of": ["active", "idle", "stopped"]},
@@ -178,14 +104,12 @@ client.set_invariant("production", [
 
 ### Layer 3 — Temporal Property Checking (LTL)
 
-Write formal properties as JSON files, then verify them over your full WAL execution trace — offline, in CI, or post-incident.
+Write formal properties as JSON files and verify them over the full WAL execution trace — offline, in CI, or post-incident.
 
 ```json
-// props/liveness.ltl.json
 {
   "name": "active_agents_eventually_idle",
   "kind": "liveness",
-  "description": "Any agent that becomes 'active' must eventually become 'idle' or 'stopped'",
   "forall": { "type": "agent" },
   "leads_to": {
     "if":   { "field": "body.status", "eq": "active" },
@@ -198,144 +122,269 @@ Write formal properties as JSON files, then verify them over your full WAL execu
 ```
 
 ```bash
-# Run in CI — exits 1 if any property is violated
 agentstate-cli verify \
-  --dir /data/wal \
-  --ns production \
+  --dir /data/wal --ns production \
   --property props/liveness.ltl.json \
-  --property props/no_unknown_status.ltl.json \
   --fail-on-violation
 ```
 
-Output is a structured JSON report with counterexample traces for each violation.
+Supported operators: `always`, `eventually`, `leads_to`, `until`, `not`, `and`, `or`.
 
-**Supported temporal operators:** `always`, `eventually`, `leads_to`, `until`, `not`, `and`, `or`
+### Layer 4 — Claim Verification
 
-> **EU AI Act compliance** — This directly supports Article 9 (risk management systems), Article 13 (transparency and traceability), and Article 72 (post-market monitoring). See [docs/verification.md](docs/verification.md) for the full mapping.
+See the next section.
 
 ---
 
-## 🤖 AI Framework Integration
+## Claim Verification
 
-AgentState integrates seamlessly with popular AI frameworks:
+**Verifiability should be open-source.** AgentState lets you formally prove what your AI agents assert — not just log it.
 
-**LangChain Integration:**
-```python
-from agentstate import AgentStateClient
-from langchain.memory import BaseChatMessageHistory
-from langchain.agents import AgentExecutor
+Every claim produces a cryptographically hash-chained **proof artifact**: a full DAG with step-by-step reasoning, checked against six formal properties.
 
-# Use AgentState as LangChain memory backend
-class AgentStateMemory(BaseChatMessageHistory):
-    def __init__(self, agent_id: str, client: AgentStateClient):
-        self.agent_id = agent_id
-        self.client = client
+### Six formal proof properties
 
-# Full LangChain + AgentState demo available in examples/
+| Property | Guarantee |
+|---|---|
+| **Self-consistency** | No contradicting proved claims in the namespace |
+| **Minimality** | Every declared premise is load-bearing |
+| **Predictive constraint** | At least one testable consequence is declared |
+| **Verifiability** | The proof DAG is complete and fully replayable |
+| **Soundness** | Every inference step licensed by a declared domain rule |
+| **Monotonicity** | All WAL state premises pinned to a specific commit |
+
+### Built-in domain packs
+
+Four domains ship compiled into the binary:
+
+| Domain | Key | Templates |
+|---|---|---|
+| Healthcare | `healthcare/v1` | `drug_safety`, `contraindication`, `diagnosis`, `lab_normal` |
+| Finance | `finance/v1` | `solvency_claim`, `capital_adequacy_claim`, `aml_clearance_claim`, `collateral_adequacy_claim` |
+| Tax | `tax/v1` | `deduction_validity`, `filing_status`, `liability_estimate` |
+| Legal | `legal/v1` | `contract_validity`, `jurisdiction_claim`, `limitation_claim`, `regulatory_compliance_claim` |
+
+The community can contribute additional domains as JSON manifests — see `domains/` and [docs/claim-verification.md](docs/claim-verification.md).
+
+### Submit a claim
+
+```bash
+curl -X POST http://localhost:8080/admin/namespaces/production/claims \
+  -H "Content-Type: application/json" \
+  -d '{
+    "domain": "healthcare/v1",
+    "template": "drug_safety",
+    "assertion": {
+      "predicate": "safe_to_prescribe",
+      "subject": {"patient_id": "p-001"},
+      "object":  {"drug": "amoxicillin", "dose_mg": 500}
+    },
+    "premises": [
+      {"kind": "source",       "id": "allergy-db-v3",          "role": "allergy_clearance"},
+      {"kind": "domain_axiom", "axiom_id": "drug_class_membership", "role": "drug_class"},
+      {"kind": "wal_state",    "ns": "production", "object_id": "patient-p-001",
+       "field": "body.allergy_profile", "role": "patient_allergy_profile", "at_commit": "a1b2c3d4"}
+    ],
+    "consequences": [
+      {"predicate": {"field": "body.last_safety_check", "required": true}, "check_after_hours": 24}
+    ]
+  }'
 ```
 
-**CrewAI Integration:**
+Response includes the stored claim and its formal proof:
+
+```json
+{
+  "claim": { "id": "01JXABC...", "commit": "blake3hash...", ... },
+  "proof": {
+    "proof_id": "01JXDEF...",
+    "status": "proved",
+    "confidence": "certain",
+    "properties": {
+      "self_consistent": true, "minimal": true,
+      "has_predictive_constraint": true, "verifiable": true,
+      "sound": true, "monotonic": true
+    },
+    "steps": [
+      {"step_id": 0, "kind": "ground",     "conclusion_predicate": "allergy_clearance"},
+      {"step_id": 1, "kind": "ground",     "conclusion_predicate": "drug_class"},
+      {"step_id": 2, "kind": "ground",     "conclusion_predicate": "patient_allergy_profile"},
+      {"step_id": 3, "kind": "inference",  "rule": "healthcare/v1:allergy_clearance"},
+      {"step_id": 4, "kind": "inference",  "rule": "healthcare/v1:drug_class_safety"},
+      {"step_id": 5, "kind": "conclusion", "conclusion_predicate": "safe_to_prescribe"}
+    ]
+  }
+}
+```
+
+### Python SDK
+
 ```python
-from agentstate import AgentStateClient
-import crewai
+result = client.submit_claim(
+    ns="production",
+    domain="healthcare/v1",
+    template="drug_safety",
+    assertion={"predicate": "safe_to_prescribe",
+                "subject": {"patient_id": "p-001"},
+                "object":  {"drug": "amoxicillin"}},
+    premises=[
+        {"kind": "source", "id": "allergy-db-v3", "role": "allergy_clearance"},
+    ],
+    consequences=[{"predicate": {"field": "body.last_safety_check", "required": True}}],
+)
+print(result["proof"]["status"])   # "proved"
+print(result["proof"]["properties"])
 
-client = AgentStateClient(base_url='http://localhost:8080', namespace='crew')
-
-# Store crew member states, task progress, and coordination
-agent = client.create_agent(
-    agent_type='crew_member',
-    body={'role': 'researcher', 'current_task': 'market_analysis'},
-    tags={'crew_id': 'marketing_team', 'status': 'active'}
+# Challenge a proof step
+client.challenge_claim(
+    ns="production",
+    claim_id=result["claim"]["id"],
+    reason="allergy database version is outdated",
+    challenged_step=0,
+    counter_evidence=["allergy-db-v4"],
 )
 ```
 
-**Custom Agent Frameworks:**
-```python
-# AgentState works with any agent framework
-class MyAgent:
-    def __init__(self, agent_id):
-        self.state = AgentStateClient(namespace='my_agents')
-        self.id = agent_id
-        
-    def save_state(self, data):
-        return self.state.create_agent(
-            agent_type='custom',
-            body=data,
-            agent_id=self.id
-        )
-        
-    def load_state(self):
-        return self.state.get_agent(self.id)
+### TypeScript SDK
+
+```typescript
+const result = await client.submitClaim("production", {
+  domain: "healthcare/v1",
+  template: "drug_safety",
+  assertion: { predicate: "safe_to_prescribe",
+               subject: { patient_id: "p-001" },
+               object:  { drug: "amoxicillin" } },
+  premises: [{ kind: "source", id: "allergy-db-v3", role: "allergy_clearance" }],
+});
+console.log(result.proof.status); // "proved"
 ```
 
-## 📊 Performance
+### Go SDK
 
-Real-world benchmarks from our test suite:
-
-- **🚀 Write throughput**: 1,400+ ops/sec
-- **🔍 Read throughput**: 170+ queries/sec  
-- **⚡ Average latency**: ~15ms
-- **📈 P95 latency**: ~30ms
-- **✅ Reliability**: 0% error rate under load
-
-## 🏗️ Core Concepts
-
-### Agents as Objects
-Each agent is stored with:
-- **`id`**: Unique identifier (ULID)
-- **`type`**: Agent category ("chatbot", "workflow", etc.)
-- **`body`**: Your agent's state (any JSON)
-- **`tags`**: Key-value pairs for querying
-- **`commit_ts`**: Last update timestamp
-
-### Namespaces
-Organize agents by environment/team:
-- `/v1/production/objects` - Production agents
-- `/v1/staging/objects` - Staging environment
-- `/v1/team-alpha/objects` - Team-specific
-
-### Real-time Queries
-```python
-# Find all active chatbots
-response = requests.post("http://localhost:8080/v1/production/query", json={
-    "tags": {"type": "chatbot", "status": "active"}
+```go
+result, err := client.SubmitClaim("production", map[string]any{
+    "domain":   "healthcare/v1",
+    "template": "drug_safety",
+    "assertion": map[string]any{
+        "predicate": "safe_to_prescribe",
+        "subject":   map[string]any{"patient_id": "p-001"},
+        "object":    map[string]any{"drug": "amoxicillin"},
+    },
+    "premises": []map[string]any{
+        {"kind": "source", "id": "allergy-db-v3", "role": "allergy_clearance"},
+    },
 })
-
-# Monitor agents by team
-team_agents = requests.post("http://localhost:8080/v1/production/query", json={
-    "tags": {"team": "ml-platform"}
-}).json()
 ```
 
-## 🛠️ API Reference
+### CLI
+
+```bash
+# List domain packs
+agentstate domain
+
+# Submit a claim from a JSON file
+agentstate claim submit --ns production --file claim.json
+
+# Get the proof
+agentstate claim proof --ns production <claim-id>
+
+# Challenge a step
+agentstate claim challenge --ns production <claim-id> \
+  --reason "source is outdated" --step 0 --counter allergy-db-v4
+```
+
+### Writing a community domain pack
+
+```json
+{
+  "domain": "your-domain",
+  "version": "v1",
+  "description": "What this domain covers.",
+  "axioms": [
+    { "id": "axiom_id", "statement": "Axiom statement." }
+  ],
+  "inference_rules": [
+    { "id": "rule_id", "premises": ["role_a", "role_b"], "conclusion": "derived_predicate" }
+  ],
+  "claim_templates": [
+    {
+      "id": "template_id",
+      "description": "What this template proves.",
+      "required_premises": ["role_a", "role_b"],
+      "conclusion_predicate": "derived_predicate",
+      "inference_chain": ["rule_id"]
+    }
+  ]
+}
+```
+
+Add it to `domains/<your-domain>/v1/manifest.json` and open a PR.
+
+---
+
+## API Reference
+
+### Core
 
 | Method | Endpoint | Description |
-|--------|----------|-------------|
-| `POST` | `/v1/{ns}/objects` | Create/update agent |
-| `GET` | `/v1/{ns}/objects/{id}` | Get agent by ID |
-| `POST` | `/v1/{ns}/query` | Query agents by tags |
+|---|---|---|
+| `POST` | `/v1/{ns}/objects` | Create/update agent state |
+| `GET` | `/v1/{ns}/objects/{id}` | Get agent (supports `?at=<RFC3339>` time-travel) |
+| `POST` | `/v1/{ns}/query` | Query agents by tags/JSONPath |
 | `DELETE` | `/v1/{ns}/objects/{id}` | Delete agent |
-| `GET` | `/health` | Health check |
-| `GET` | `/metrics` | Prometheus metrics |
-| `GET` | `/admin/namespaces/{ns}/chain-verify` | Verify full hash chain |
+| `GET` | `/v1/{ns}/watch` | SSE watch stream |
+| `POST` | `/v1/{ns}/lease/acquire` | Acquire a distributed lease |
+| `POST` | `/v1/{ns}/lease/renew` | Renew lease |
+| `POST` | `/v1/{ns}/lease/release` | Release lease |
+
+### Verification
+
+| Method | Endpoint | Description |
+|---|---|---|
+| `GET` | `/admin/namespaces/{ns}/chain-verify` | Verify blake3 hash chain |
 | `POST` | `/admin/namespaces/{ns}/invariants` | Set namespace invariant spec |
 | `GET` | `/admin/namespaces/{ns}/invariants` | Get current invariant spec |
+| `POST` | `/admin/namespaces/{ns}/claims` | Submit a claim for verification |
+| `GET` | `/admin/namespaces/{ns}/claims` | List all claims |
+| `GET` | `/admin/namespaces/{ns}/claims/{id}` | Get a claim |
+| `GET` | `/admin/namespaces/{ns}/claims/{id}/proof` | Get formal proof artifact |
+| `POST` | `/admin/namespaces/{ns}/claims/{id}/challenge` | Challenge a proof |
+| `GET` | `/admin/domains` | List domain packs |
 
-## 🐳 Docker Deployment
+### Admin / Ops
 
-### Basic Setup
+| Method | Endpoint | Description |
+|---|---|---|
+| `GET` | `/health` | Health check |
+| `GET` | `/metrics` | Prometheus metrics |
+| `POST` | `/admin/snapshot` | Create WAL snapshot |
+| `GET` | `/admin/manifest` | WAL manifest |
+| `POST` | `/admin/trim-wal` | Trim WAL segments before snapshot |
+| `GET` | `/admin/dump` | Dump all objects as NDJSON |
+
+---
+
+## Performance
+
+- **Write throughput**: 1,400+ ops/sec
+- **Read throughput**: 170+ queries/sec
+- **Average latency**: ~15ms
+- **P95 latency**: ~30ms
+- **Reliability**: 0% error rate under load
+
+---
+
+## Deployment
+
+### Docker
+
 ```bash
-docker run -d --name agentstate \
-  -p 8080:8080 \
-  -p 9090:9090 \
-  ayushmi/agentstate:latest
-```
+# Development
+docker run -p 8080:8080 ayushmi/agentstate:latest
 
-### Production Setup
-```bash
-docker run -d --name agentstate \
-  -p 8080:8080 \
-  -p 9090:9090 \
+# Production (persistent storage)
+docker run -d \
+  -p 8080:8080 -p 9090:9090 \
   -e DATA_DIR=/data \
   -v agentstate-data:/data \
   --restart unless-stopped \
@@ -343,16 +392,14 @@ docker run -d --name agentstate \
 ```
 
 ### Docker Compose
+
 ```yaml
-version: '3.8'
 services:
   agentstate:
     image: ayushmi/agentstate:latest
-    ports:
-      - "8080:8080"
-      - "9090:9090"
+    ports: ["8080:8080", "9090:9090"]
     environment:
-      - DATA_DIR=/data
+      DATA_DIR: /data
     volumes:
       - agentstate-data:/data
     restart: unless-stopped
@@ -361,266 +408,46 @@ volumes:
   agentstate-data:
 ```
 
-## ☸️ Kubernetes Deployment
+### Build from source
 
-```yaml
-apiVersion: apps/v1
-kind: Deployment
-metadata:
-  name: agentstate
-spec:
-  replicas: 3
-  selector:
-    matchLabels:
-      app: agentstate
-  template:
-    metadata:
-      labels:
-        app: agentstate
-    spec:
-      containers:
-      - name: agentstate
-        image: ayushmi/agentstate:latest
-        ports:
-        - containerPort: 8080
-        - containerPort: 9090
-        env:
-        - name: DATA_DIR
-          value: /data
-        volumeMounts:
-        - name: data
-          mountPath: /data
-      volumes:
-      - name: data
-        persistentVolumeClaim:
-          claimName: agentstate-data
----
-apiVersion: v1
-kind: Service
-metadata:
-  name: agentstate
-spec:
-  selector:
-    app: agentstate
-  ports:
-  - name: http
-    port: 8080
-    targetPort: 8080
-  - name: grpc  
-    port: 9090
-    targetPort: 9090
-```
-
-## 🔧 Building from Source
-
-### Prerequisites
-- Rust 1.81+
-- Protocol Buffers compiler
-
-### Build and Run
 ```bash
-# Clone repository
 git clone https://github.com/ayushmi/agentstate.git
 cd agentstate
-
-# Build server
 cargo build --release -p agentstate-server
-
-# Run server
 ./target/release/agentstate-server
-
-# Or build Docker image
-docker build -f docker/Dockerfile -t ayushmi/agentstate:latest .
 ```
-
-## 📚 Documentation
-
-- **[📖 Quickstart Guide](QUICKSTART.md)** - Detailed getting started
-- **[🔬 Verification Guide](docs/verification.md)** - Hash chains, invariants, LTL, EU AI Act mapping
-- **[🗺️ Roadmap](docs/ROADMAP.md)** - Priorities, dependencies, milestones
-- **[🏗️ Architecture](docs/architecture.md)** - System design
-- **[🚀 Deployment](docs/DEPLOY.md)** - Production setup
-- **[📊 Monitoring](deploy/grafana/)** - Grafana dashboards
-- **[🔧 Configuration](docs/configuration.md)** - Settings reference
-
-## 🧪 Testing
-
-Run the comprehensive test suite:
-
-```bash
-# Integration tests  
-python integration_tests.py
-
-# Load testing
-python load_test.py
-
-# SDK examples
-python examples/quickstart/python_example.py
-node examples/quickstart/nodejs_example.js
-
-# Basic test suite
-bash test_suite.sh
-```
-
-## 🤝 Contributing
-
-1. Fork the repository
-2. Create your feature branch (`git checkout -b feature/amazing-feature`)
-3. Commit your changes (`git commit -m 'Add amazing feature'`)
-4. Push to the branch (`git push origin feature/amazing-feature`)
-5. Open a Pull Request
-
-## 📄 License
-
-This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
-
-## 💡 Use Cases
-
-**Multi-Agent AI Systems:**
-```python
-# Coordinate multiple specialized agents
-marketing_agent = client.create_agent('marketing_specialist', {...})
-research_agent = client.create_agent('research_specialist', {...})
-writer_agent = client.create_agent('content_writer', {...})
-
-# Query agents by capability when needed
-available_agents = client.query_agents(tags={'status': 'idle', 'capability': 'research'})
-```
-
-**Workflow Orchestration:**
-```python
-# Track workflow steps and state
-workflow = client.create_agent(
-    agent_type='workflow',
-    body={
-        'current_step': 'data_collection',
-        'completed_steps': ['initialization'],
-        'next_steps': ['analysis', 'reporting']
-    },
-    tags={'workflow_id': 'user_onboarding', 'priority': 'high'}
-)
-```
-
-**Agent Monitoring & Analytics:**
-```python
-# Real-time agent health monitoring
-active_agents = client.query_agents(tags={'status': 'active'})
-failed_agents = client.query_agents(tags={'status': 'error'})
-
-# Build dashboards with live agent metrics
-for agent in active_agents:
-    print(f"Agent {agent['id']}: {agent['body']['current_task']}")
-```
-
-## 🌟 Why AgentState?
-
-Traditional approaches to AI agent state management involve:
-- Complex Redis/Postgres setups
-- Custom queuing systems  
-- Manual state synchronization
-- No built-in querying capabilities
-
-AgentState provides:
-- ✅ **Simple API** - Just HTTP requests, no complex SDKs
-- ✅ **Built-in persistence** - Automatic WAL + snapshots
-- ✅ **Rich querying** - Find agents by any tag combination
-- ✅ **Real-time updates** - Subscribe to state changes
-- ✅ **Production ready** - Monitoring, clustering, reliability
-- ✅ **Language agnostic** - Works with any HTTP client
-- ✅ **Formally verifiable** - Prove behavioral compliance, not just observe it
-- ✅ **Audit-ready** - Cryptographic proof of every state transition
-
-**Perfect for:**
-- Multi-agent AI systems
-- Agent monitoring dashboards
-- Workflow orchestration
-- Real-time agent coordination
-- Production AI deployments
-- EU AI Act compliance infrastructure
 
 ---
 
-**Ready to power your AI agents with persistent, queryable state!** 🚀
+## EU AI Act Compliance
 
-## 🚀 Try it Now
+| Article | Requirement | Satisfied by |
+|---|---|---|
+| Art. 9 | Risk management system | Runtime invariant assertions reject unsafe writes |
+| Art. 13 | Transparency & traceability | Hash chain + full proof DAG with step-by-step reasoning |
+| Art. 14 | Human oversight | Challenge protocol — any party can contest any proof |
+| Art. 15 | Accuracy, robustness | Soundness + monotonicity properties guarantee pinned evidence |
+| Art. 72 | Post-market monitoring | LTL temporal verification in CI, structured claim audit trail |
 
-**1-Minute Setup:**
-```bash
-# Start server
-docker run -p 8080:8080 ayushmi/agentstate:latest
+---
 
-# Install SDK (Python or Node.js)
-pip install agentstate
-# npm install agentstate
+## Documentation
 
-# Create your first agent
-python -c "
-from agentstate import AgentStateClient
-client = AgentStateClient(base_url='http://localhost:8080', namespace='demo')
-agent = client.create_agent('chatbot', {'name': 'MyBot', 'status': 'active'})
-print(f'Created agent: {agent[\"id\"]}')
-"
-```
+- [Claim Verification](docs/claim-verification.md) — proof model, domain packs, EU AI Act mapping
+- [Verification Guide](docs/verification.md) — hash chains, invariants, LTL
+- [Roadmap](docs/ROADMAP.md)
+- [Examples](examples/)
 
-**Explore Examples:**
-- 🦜 **LangChain Integration**: [AgentStateTesting/python-tests/langchain-example/](AgentStateTesting/python-tests/langchain-example/)
-- 🤖 **CrewAI Integration**: [AgentStateTesting/python-tests/crewai-example/](AgentStateTesting/python-tests/crewai-example/)  
-- 📝 **Complete Quickstart**: [QUICKSTART.md](QUICKSTART.md)
+---
 
-## 🔧 Troubleshooting
+## Contributing
 
-### Common Issues
+Community domain packs are especially welcome. If you can formalize a domain (agriculture, cybersecurity, clinical trials, education, ...) follow the JSON schema in `domains/` and open a pull request.
 
-**Server Not Starting**
-```bash
-# Check if port is already in use
-lsof -i :8080
+For bugs and features, use [GitHub Issues](https://github.com/ayushmi/agentstate/issues).
 
-# Use different port if needed
-docker run -p 8081:8080 ayushmi/agentstate:latest
-```
+---
 
-**Connection Refused**
-```bash
-# Verify server is running
-curl http://localhost:8080/health
+## License
 
-# Should return: ok
-```
-
-**SDK Installation Issues**
-```bash
-# Python: Upgrade pip and reinstall
-pip install --upgrade pip
-pip install --upgrade agentstate
-
-# Node.js: Clear cache and reinstall
-npm cache clean --force
-npm install agentstate
-```
-
-**Performance Issues**
-- Default setup handles 1,400+ ops/sec
-- For higher throughput, see [Performance Guide](docs/perf.md)
-- Monitor with `/metrics` endpoint on port 9090
-
-**Docker Image Issues**
-```bash
-# Pull latest image
-docker pull ayushmi/agentstate:latest
-
-# Check if image is running
-docker ps
-
-# View container logs
-docker logs <container-id>
-```
-
-### Getting Help
-
-- 📖 **Documentation**: [docs/](docs/)
-- 💬 **Issues**: [GitHub Issues](https://github.com/ayushmi/agentstate/issues)
-- 🚀 **Examples**: [examples/](examples/)
-- 📧 **Contact**: Create an issue for support
-
-For questions and support, see our [Issues](https://github.com/ayushmi/agentstate/issues) page.
+Apache-2.0
