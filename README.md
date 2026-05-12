@@ -448,6 +448,20 @@ For bugs and features, use [GitHub Issues](https://github.com/ayushmi/agentstate
 
 ---
 
+## Our Mission
+
+AgentState is open-source infrastructure built in service of a larger goal: **autonomous AI that can operate the world — physically and digitally — in a way that is causal and verifiable by design.**
+
+We are building a causal world model for mechanism inference. The aim is not AI that predicts what usually happens, but AI that understands *why* things happen — and can therefore act on that understanding with confidence. This powers Actions, our product for autonomous operations: dispatching setpoint changes to PLCs, coordinating human workflows, and executing in digital systems. We operate across industrial environments and biology.
+
+When AI acts in the physical world, the stakes are real. A wrong setpoint in a manufacturing process or a biological system is not a bad recommendation — it can be catastrophic. Verifiability is not a compliance checkbox in this context; it is a hard requirement for deployment.
+
+That is why verifiability is open-source. Trust in high-stakes AI cannot be built on closed systems. It requires infrastructure that anyone can inspect, challenge, and contribute to. AgentState gives teams the primitives to prove — not just assert — that their AI is doing the right thing for the right reasons.
+
+If you are working on autonomous operations, industrial AI, or biological systems and care about getting this right, we would like to hear from you.
+
+---
+
 ## License
 
 Apache-2.0
