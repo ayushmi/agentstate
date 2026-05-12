@@ -1,0 +1,9 @@
+{
+  "name": "status_never_unknown",
+  "kind": "safety",
+  "description": "body.status must never equal 'unknown' across all versions",
+  "forall": { "type": "agent" },
+  "always": {
+    "not": { "field": "body.status", "eq": "unknown" }
+  }
+}

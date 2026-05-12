@@ -2,6 +2,25 @@ import axios, { AxiosInstance } from 'axios';
 
 export type Tags = Record<string, string>;
 
+/** A single rule in a namespace invariant spec. */
+export interface InvariantRule {
+  field: string;                      // "body.<key>" or "tags.<key>"
+  required?: boolean;
+  type?: 'string' | 'number' | 'bool' | 'array' | 'object';
+  eq?: any;
+  one_of?: any[];
+  gte?: number;
+  lte?: number;
+  gt?: number;
+  lt?: number;
+  regex?: string;
+}
+
+/** Namespace invariant spec — a set of rules enforced on every write. */
+export interface InvariantSpec {
+  rules: InvariantRule[];
+}
+
 /** Records why a state change happened. All fields are optional. */
 export interface Cause {
   actor?: string;   // agent ID making this change
@@ -168,6 +187,33 @@ export class AgentStateClient {
       return response.status === 200 && response.data.trim() === 'ok';
     } catch {
       return false;
+    }
+  }
+
+  // ── Invariant management ────────────────────────────────────────────────────
+
+  /**
+   * Set a namespace invariant that is enforced on every write.
+   * @param ns - Namespace to protect (can differ from the client's namespace).
+   * @param rules - Array of rule objects, e.g. [{field:"body.status", required:true}]
+   * @returns The stored spec as returned by the server.
+   */
+  async setInvariant(ns: string, rules: InvariantRule[]): Promise<InvariantSpec> {
+    const resp = await this.http.post(`${this.baseUrl}/admin/namespaces/${ns}/invariants`, { rules });
+    return resp.data;
+  }
+
+  /**
+   * Retrieve the current invariant spec for a namespace.
+   * @returns The spec, or null if no invariant is set.
+   */
+  async getInvariant(ns: string): Promise<InvariantSpec | null> {
+    try {
+      const resp = await this.http.get(`${this.baseUrl}/admin/namespaces/${ns}/invariants`);
+      return resp.data;
+    } catch (e: any) {
+      if (e?.response?.status === 404) return null;
+      throw e;
     }
   }
 

@@ -1,4 +1,4 @@
-use agentstate_core::{PutRequest, QueryRequest};
+use agentstate_core::{PutRequest, QueryRequest, StateError};
 use agentstate_storage::{InMemoryStore, PersistentStore, Storage};
 use axum::http::StatusCode;
 use axum::{
@@ -164,6 +164,8 @@ async fn main() -> anyhow::Result<()> {
         .route("/admin/trim-wal", post(admin_trim_wal))
         .route("/admin/explain-query", post(admin_explain_query))
         .route("/admin/dump", get(admin_dump))
+        .route("/admin/namespaces/:ns/chain-verify", get(admin_chain_verify))
+        .route("/admin/namespaces/:ns/invariants", post(admin_set_invariant).get(admin_get_invariant))
         .route("/metrics", get(metrics))
         .with_state(state)
         .layer(
@@ -422,6 +424,11 @@ async fn put_objects(
                 OPS_TOTAL.with_label_values(&["put"]).inc();
                 (StatusCode::OK, Json(obj)).into_response()
             }
+            Err(StateError::InvariantViolation(violations)) => (
+                StatusCode::CONFLICT,
+                Json(json!({"error": "invariant_violation", "violations": violations})),
+            )
+                .into_response(),
             Err(e) => (
                 StatusCode::BAD_REQUEST,
                 Json(json!({"error": e.to_string()})),
@@ -664,6 +671,58 @@ async fn admin_dump(State(app): State<AppState>, headers: HeaderMap) -> impl Int
             StatusCode::INTERNAL_SERVER_ERROR,
             Json(json!({"error": e.to_string()}))
         ).into_response(),
+    }
+}
+
+async fn admin_chain_verify(
+    State(app): State<AppState>,
+    Path(ns): Path<String>,
+    headers: HeaderMap,
+) -> impl IntoResponse {
+    if let Err(resp) = enforce_caps(&headers, "admin://global", "admin") {
+        return resp.into_response();
+    }
+    let breaks = app.store.verify_chain(Some(&ns));
+    let ok = breaks.is_empty();
+    let objects_checked = app.store.all_objects().iter().filter(|o| o.ns == ns).count();
+    (StatusCode::OK, Json(json!({
+        "ok": ok,
+        "namespace": ns,
+        "objects_checked": objects_checked,
+        "breaks": breaks,
+    }))).into_response()
+}
+
+async fn admin_set_invariant(
+    State(app): State<AppState>,
+    Path(ns): Path<String>,
+    headers: HeaderMap,
+    Json(spec): Json<serde_json::Value>,
+) -> impl IntoResponse {
+    if let Err(resp) = enforce_caps(&headers, "admin://global", "admin") {
+        return resp.into_response();
+    }
+    if spec.get("rules").and_then(|r| r.as_array()).is_none() {
+        return (StatusCode::BAD_REQUEST, Json(json!({"error": "spec must have a 'rules' array"}))).into_response();
+    }
+    match app.store.set_namespace_invariant(&ns, spec).await {
+        Ok(stored) => (StatusCode::OK, Json(stored)).into_response(),
+        Err(e) => (StatusCode::INTERNAL_SERVER_ERROR, Json(json!({"error": e.to_string()}))).into_response(),
+    }
+}
+
+async fn admin_get_invariant(
+    State(app): State<AppState>,
+    Path(ns): Path<String>,
+    headers: HeaderMap,
+) -> impl IntoResponse {
+    if let Err(resp) = enforce_caps(&headers, "admin://global", "admin") {
+        return resp.into_response();
+    }
+    match app.store.get_namespace_invariant(&ns).await {
+        Ok(Some(spec)) => (StatusCode::OK, Json(spec)).into_response(),
+        Ok(None) => (StatusCode::NOT_FOUND, Json(json!({"error": "no invariant set for namespace"}))).into_response(),
+        Err(e) => (StatusCode::INTERNAL_SERVER_ERROR, Json(json!({"error": e.to_string()}))).into_response(),
     }
 }
 

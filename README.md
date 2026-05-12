@@ -27,6 +27,8 @@ AgentState provides a simple, scalable way to store and manage AI agent state wi
 
 ## 🚀 Quick Start
 
+Try it in your browser: see the Playground at `docs/playground/index.html` (works great with a local server on :8080). For a hosted path with simple billing, use the gateway in `gateway/` and click “Use Hosted (fetch token)” in the Playground.
+
 ### 1. Start AgentState Server
 
 **Option A: Using Docker (Recommended)**
@@ -342,6 +344,7 @@ docker build -f docker/Dockerfile -t ayushmi/agentstate:latest .
 ## 📚 Documentation
 
 - **[📖 Quickstart Guide](QUICKSTART.md)** - Detailed getting started
+- **[🗺️ Roadmap](docs/ROADMAP.md)** - Priorities, dependencies, milestones
 - **[🏗️ Architecture](docs/architecture.md)** - System design
 - **[🚀 Deployment](docs/DEPLOY.md)** - Production setup
 - **[📊 Monitoring](deploy/grafana/)** - Grafana dashboards

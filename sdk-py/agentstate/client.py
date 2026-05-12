@@ -244,3 +244,42 @@ class AgentStateClient:
         r = requests.post(f"{self.base_url}/v1/{self.namespace}/lease/release", json={"key": key, "owner": owner, "token": token})
         r.raise_for_status()
         return True
+
+    # ── Invariant management ──────────────────────────────────────────────────
+
+    def set_invariant(self, ns: str, rules: List[Dict[str, Any]]) -> Dict[str, Any]:
+        """Set a namespace invariant (predicate spec) that is enforced on every write.
+
+        Args:
+            ns: Namespace to protect.
+            rules: List of rule dicts, e.g.
+                   [{"field": "body.status", "required": True},
+                    {"field": "body.score", "gte": 0, "lte": 1}]
+
+        Returns:
+            The stored spec as returned by the server.
+
+        Raises:
+            requests.HTTPError: On server error (400 for invalid spec, 401/403 for auth).
+        """
+        resp = self.session.post(
+            f"{self.base_url}/admin/namespaces/{ns}/invariants",
+            json={"rules": rules},
+        )
+        resp.raise_for_status()
+        return resp.json()
+
+    def get_invariant(self, ns: str) -> Optional[Dict[str, Any]]:
+        """Retrieve the current invariant spec for a namespace, or None if none is set.
+
+        Args:
+            ns: Namespace to query.
+
+        Returns:
+            The spec dict, or None if no invariant has been configured.
+        """
+        resp = self.session.get(f"{self.base_url}/admin/namespaces/{ns}/invariants")
+        if resp.status_code == 404:
+            return None
+        resp.raise_for_status()
+        return resp.json()

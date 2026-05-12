@@ -220,3 +220,38 @@ func (c *Client) Health() bool {
 	defer resp.Body.Close()
 	return resp.StatusCode == 200
 }
+
+// SetInvariant configures a namespace invariant (enforced before every write).
+// rules is a slice of rule maps, e.g.:
+//
+//	[]map[string]any{
+//	    {"field": "body.status", "required": true},
+//	    {"field": "body.score", "gte": 0, "lte": 1},
+//	}
+func (c *Client) SetInvariant(ns string, rules []map[string]any) (map[string]any, error) {
+	payload := map[string]any{"rules": rules}
+	hreq, err := c.newRequest("POST", fmt.Sprintf("/admin/namespaces/%s/invariants", ns), payload)
+	if err != nil {
+		return nil, err
+	}
+	var result map[string]any
+	return result, c.do(hreq, &result)
+}
+
+// GetInvariant retrieves the current invariant spec for a namespace.
+// Returns nil, nil if no invariant is set.
+func (c *Client) GetInvariant(ns string) (map[string]any, error) {
+	hreq, err := c.newRequest("GET", fmt.Sprintf("/admin/namespaces/%s/invariants", ns), nil)
+	if err != nil {
+		return nil, err
+	}
+	var result map[string]any
+	if err := c.do(hreq, &result); err != nil {
+		// 404 means no invariant set — treat as nil, nil
+		if strings.Contains(err.Error(), "status 404") {
+			return nil, nil
+		}
+		return nil, err
+	}
+	return result, nil
+}

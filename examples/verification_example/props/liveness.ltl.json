@@ -1,0 +1,17 @@
+{
+  "name": "active_agents_eventually_idle",
+  "kind": "liveness",
+  "description": "Any agent that becomes 'active' must eventually become 'idle' or 'stopped'",
+  "forall": { "type": "agent" },
+  "leads_to": {
+    "if":   { "field": "body.status", "eq": "active" },
+    "then": {
+      "eventually": {
+        "or": [
+          { "field": "body.status", "eq": "idle" },
+          { "field": "body.status", "eq": "stopped" }
+        ]
+      }
+    }
+  }
+}

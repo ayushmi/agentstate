@@ -10,4 +10,5 @@ serde_json = { workspace = true }
 zstd = { workspace = true }
 anyhow = { workspace = true }
 agentstate-storage = { path = "../agentstate-storage" }
+agentstate-verify = { path = "../agentstate-verify" }
 ciborium = { workspace = true }

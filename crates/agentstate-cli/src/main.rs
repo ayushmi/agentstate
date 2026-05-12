@@ -1,6 +1,7 @@
 use agentstate_storage::walbin;
 use anyhow::Result;
 use clap::{Parser, Subcommand};
+use agentstate_verify;
 
 #[derive(Parser)]
 #[command(name = "agentstate")]
@@ -18,6 +19,24 @@ enum Cmd {
         out: String,
         #[arg(long)]
         dump: Option<String>,
+    },
+    /// Verify temporal properties (LTL) over a WAL trace and emit a JSON report.
+    Verify {
+        /// WAL directory (same as DATA_DIR used by the server)
+        #[arg(long, short = 'd', default_value = ".")]
+        dir: String,
+        /// Filter to a specific namespace (optional; omit to check all namespaces)
+        #[arg(long, short = 'n')]
+        ns: Option<String>,
+        /// Path to a .ltl.json property file (repeatable)
+        #[arg(long, short = 'p')]
+        property: Vec<String>,
+        /// Write JSON report to this file instead of stdout
+        #[arg(long, short = 'o')]
+        output: Option<String>,
+        /// Exit with code 1 if any property fails
+        #[arg(long)]
+        fail_on_violation: bool,
     },
     /// Show the full state history of a single object, with field-level diffs between versions.
     Replay {
@@ -91,6 +110,22 @@ fn main() -> Result<()> {
             }
             let report = serde_json::json!({ "last_seq": last_seq, "objects": objs.len(), "crc_ok": true, "index_consistent": true });
             std::fs::write(out, serde_json::to_vec_pretty(&report)?)?;
+        }
+        Cmd::Verify { dir, ns, property, output, fail_on_violation } => {
+            if property.is_empty() {
+                eprintln!("No property files specified. Use --property <path.ltl.json>");
+                std::process::exit(2);
+            }
+            let properties = agentstate_verify::load_properties(&property)?;
+            let report = agentstate_verify::run(&dir, ns.as_deref(), &properties);
+            let json = serde_json::to_string_pretty(&report)?;
+            match output {
+                Some(path) => std::fs::write(&path, &json)?,
+                None => println!("{}", json),
+            }
+            if fail_on_violation && report.failed > 0 {
+                std::process::exit(1);
+            }
         }
         Cmd::Replay { object_id, dir, ns, snapshot } => {
             let mut versions: Vec<serde_json::Value> = Vec::new();
