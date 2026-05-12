@@ -1,29 +1,34 @@
 # 🤖 AgentState v1.0.0
-**Firebase for AI Agents** — Persistent state management for AI applications
+**Firebase for AI Agents** — Persistent, verifiable state management for AI applications
 
 [![Docker Build](https://img.shields.io/badge/docker-ready-blue)](#docker-deployment)
-[![API Status](https://img.shields.io/badge/api-stable-green)](#api-reference)  
+[![API Status](https://img.shields.io/badge/api-stable-green)](#api-reference)
 [![Load Tested](https://img.shields.io/badge/load%20tested-1400%20ops%2Fs-brightgreen)](#performance)
+[![Formally Verifiable](https://img.shields.io/badge/formally-verifiable-purple)](#-formal-verifiability)
 [![Python SDK](https://img.shields.io/badge/python-pypi-blue)](https://pypi.org/project/agentstate/)
 [![Node.js SDK](https://img.shields.io/badge/nodejs-npm-green)](https://www.npmjs.com/package/agentstate)
 
-AgentState provides a simple, scalable way to store and manage AI agent state with real-time updates, rich querying, and built-in persistence. Think Firebase for your AI agents.
+AgentState provides a simple, scalable way to store and manage AI agent state with real-time updates, rich querying, built-in persistence, and cryptographic behavioral proof. Think Firebase for your AI agents — with the auditability of a blockchain.
 
 **🚀 Key Features:**
 - **Zero-config setup** — Docker one-liner gets you started
-- **Language agnostic** — HTTP/gRPC APIs + Python/Node.js SDKs  
+- **Language agnostic** — HTTP/gRPC APIs + Python/Node.js/Go SDKs
 - **High performance** — 1,400+ ops/sec with crash-safe persistence
 - **Real-time queries** — Find agents by tags, get live updates
 - **Production ready** — Load tested, monitored, Kubernetes friendly
+- **Formally verifiable** — Prove your agents always behave correctly
 
 ## ✨ Features
 
 - 🔄 **Real-time state updates** - Subscribe to agent state changes
-- 🏷️ **Rich querying** - Query agents by tags and attributes  
+- 🏷️ **Rich querying** - Query agents by tags and attributes
 - 💾 **Persistent storage** - Crash-safe WAL + snapshots
 - ⚡ **High performance** - 1,400+ ops/sec, ~15ms latency
 - 🐳 **Production ready** - Docker, Kubernetes, monitoring
 - 🔌 **Simple API** - HTTP REST + gRPC, language agnostic
+- 🔐 **Tamper-evident** - blake3 hash chain across every commit
+- 📋 **Runtime invariants** - Reject bad writes before they happen
+- 🔬 **Temporal verification** - LTL property checking over full WAL traces
 
 ## 🚀 Quick Start
 
@@ -125,6 +130,90 @@ curl -X POST http://localhost:8080/v1/my-app/query \
   -H "Content-Type: application/json" \
   -d '{"tags": {"env": "prod"}}'
 ```
+
+## 🔬 Formal Verifiability
+
+AgentState is the only open-source AI agent state store that can **prove** your agents behave correctly. Three complementary layers:
+
+### Layer 1 — Tamper-Evident Hash Chain
+
+Every write extends a blake3 hash chain. Each commit's hash includes the previous commit hash and a monotonic sequence number, making any WAL tampering or reordering cryptographically detectable.
+
+```bash
+# Verify the full chain for a namespace
+curl http://localhost:8080/admin/namespaces/production/chain-verify
+# → { "ok": true, "objects_checked": 1842, "breaks": [] }
+```
+
+Objects include a `prev_commit` field linking back to the previous version — giving you a full provenance trail for every agent.
+
+### Layer 2 — Runtime Invariant Assertions
+
+Define a predicate spec for a namespace. Every write is validated before it's accepted — violations are rejected with a structured 409.
+
+```bash
+# Set invariant: status must be one of these values, score must be in [0, 1]
+curl -X POST http://localhost:8080/admin/namespaces/production/invariants \
+  -H "Content-Type: application/json" \
+  -d '{
+    "rules": [
+      { "field": "body.status", "required": true, "one_of": ["active", "idle", "stopped"] },
+      { "field": "body.score",  "gte": 0.0, "lte": 1.0 },
+      { "field": "body.agent_id", "required": true, "type": "string" }
+    ]
+  }'
+```
+
+**Supported predicates:** `required`, `type`, `eq`, `one_of`, `gte`/`lte`/`gt`/`lt`, `regex`
+
+Specs are WAL-persisted and replayed on restart — invariants survive server crashes.
+
+**Python SDK:**
+```python
+client.set_invariant("production", [
+    {"field": "body.status", "one_of": ["active", "idle", "stopped"]},
+    {"field": "body.score",  "gte": 0.0, "lte": 1.0},
+])
+```
+
+### Layer 3 — Temporal Property Checking (LTL)
+
+Write formal properties as JSON files, then verify them over your full WAL execution trace — offline, in CI, or post-incident.
+
+```json
+// props/liveness.ltl.json
+{
+  "name": "active_agents_eventually_idle",
+  "kind": "liveness",
+  "description": "Any agent that becomes 'active' must eventually become 'idle' or 'stopped'",
+  "forall": { "type": "agent" },
+  "leads_to": {
+    "if":   { "field": "body.status", "eq": "active" },
+    "then": { "eventually": { "or": [
+      { "field": "body.status", "eq": "idle" },
+      { "field": "body.status", "eq": "stopped" }
+    ]}}
+  }
+}
+```
+
+```bash
+# Run in CI — exits 1 if any property is violated
+agentstate-cli verify \
+  --dir /data/wal \
+  --ns production \
+  --property props/liveness.ltl.json \
+  --property props/no_unknown_status.ltl.json \
+  --fail-on-violation
+```
+
+Output is a structured JSON report with counterexample traces for each violation.
+
+**Supported temporal operators:** `always`, `eventually`, `leads_to`, `until`, `not`, `and`, `or`
+
+> **EU AI Act compliance** — This directly supports Article 9 (risk management systems), Article 13 (transparency and traceability), and Article 72 (post-market monitoring). See [docs/verification.md](docs/verification.md) for the full mapping.
+
+---
 
 ## 🤖 AI Framework Integration
 
@@ -228,6 +317,9 @@ team_agents = requests.post("http://localhost:8080/v1/production/query", json={
 | `DELETE` | `/v1/{ns}/objects/{id}` | Delete agent |
 | `GET` | `/health` | Health check |
 | `GET` | `/metrics` | Prometheus metrics |
+| `GET` | `/admin/namespaces/{ns}/chain-verify` | Verify full hash chain |
+| `POST` | `/admin/namespaces/{ns}/invariants` | Set namespace invariant spec |
+| `GET` | `/admin/namespaces/{ns}/invariants` | Get current invariant spec |
 
 ## 🐳 Docker Deployment
 
@@ -344,6 +436,7 @@ docker build -f docker/Dockerfile -t ayushmi/agentstate:latest .
 ## 📚 Documentation
 
 - **[📖 Quickstart Guide](QUICKSTART.md)** - Detailed getting started
+- **[🔬 Verification Guide](docs/verification.md)** - Hash chains, invariants, LTL, EU AI Act mapping
 - **[🗺️ Roadmap](docs/ROADMAP.md)** - Priorities, dependencies, milestones
 - **[🏗️ Architecture](docs/architecture.md)** - System design
 - **[🚀 Deployment](docs/DEPLOY.md)** - Production setup
@@ -434,13 +527,16 @@ AgentState provides:
 - ✅ **Real-time updates** - Subscribe to state changes
 - ✅ **Production ready** - Monitoring, clustering, reliability
 - ✅ **Language agnostic** - Works with any HTTP client
+- ✅ **Formally verifiable** - Prove behavioral compliance, not just observe it
+- ✅ **Audit-ready** - Cryptographic proof of every state transition
 
 **Perfect for:**
 - Multi-agent AI systems
-- Agent monitoring dashboards  
+- Agent monitoring dashboards
 - Workflow orchestration
 - Real-time agent coordination
 - Production AI deployments
+- EU AI Act compliance infrastructure
 
 ---
 
