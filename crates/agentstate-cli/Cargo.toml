@@ -11,4 +11,6 @@ zstd = { workspace = true }
 anyhow = { workspace = true }
 agentstate-storage = { path = "../agentstate-storage" }
 agentstate-verify = { path = "../agentstate-verify" }
+agentstate-claims = { path = "../agentstate-claims" }
+reqwest = { version = "0.12", features = ["blocking", "json"] }
 ciborium = { workspace = true }

@@ -5,6 +5,7 @@ members = [
   "crates/agentstate-server",
   "crates/agentstate-cli",
   "crates/agentstate-verify",
+  "crates/agentstate-claims",
 ]
 resolver = "2"
 

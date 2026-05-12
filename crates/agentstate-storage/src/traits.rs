@@ -99,6 +99,60 @@ pub trait Storage: Send + Sync + 'static {
     async fn get_namespace_invariant(&self, _ns: &str) -> Result<Option<serde_json::Value>> {
         Ok(None)
     }
+
+    // Claim verification storage
+    async fn store_claim(
+        &self,
+        _ns: &str,
+        _claim_id: &str,
+        _claim: serde_json::Value,
+    ) -> Result<()> {
+        Ok(())
+    }
+    async fn get_claim(
+        &self,
+        _ns: &str,
+        _claim_id: &str,
+    ) -> Result<Option<serde_json::Value>> {
+        Ok(None)
+    }
+    async fn store_proof(
+        &self,
+        _ns: &str,
+        _claim_id: &str,
+        _proof_id: &str,
+        _proof: serde_json::Value,
+    ) -> Result<()> {
+        Ok(())
+    }
+    async fn get_proof_by_claim(
+        &self,
+        _ns: &str,
+        _claim_id: &str,
+    ) -> Result<Option<serde_json::Value>> {
+        Ok(None)
+    }
+    async fn list_claims(&self, _ns: &str) -> Result<Vec<serde_json::Value>> {
+        Ok(vec![])
+    }
+    async fn store_challenge(
+        &self,
+        _ns: &str,
+        _claim_id: &str,
+        _challenge: serde_json::Value,
+    ) -> Result<()> {
+        Ok(())
+    }
+    async fn get_challenges(
+        &self,
+        _ns: &str,
+        _claim_id: &str,
+    ) -> Result<Vec<serde_json::Value>> {
+        Ok(vec![])
+    }
+    async fn get_proofs_for_ns(&self, _ns: &str) -> Result<Vec<serde_json::Value>> {
+        Ok(vec![])
+    }
 }
 
 pub trait WatchHandle: Send {

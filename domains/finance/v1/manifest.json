@@ -1,0 +1,91 @@
+{
+  "domain": "finance",
+  "version": "v1",
+  "description": "Formal axioms, inference rules, and claim templates for financial compliance and risk. Covers solvency, capital adequacy, AML, and risk ratings.",
+  "axioms": [
+    {
+      "id": "solvency_definition",
+      "statement": "An entity is solvent if and only if its total assets exceed its total liabilities at fair value as of the measurement date."
+    },
+    {
+      "id": "capital_adequacy_basel3",
+      "statement": "Under Basel III, a bank is adequately capitalised if its CET1 ratio is at or above 4.5%, Tier 1 ratio at or above 6%, and Total Capital ratio at or above 8%."
+    },
+    {
+      "id": "aml_screening_basis",
+      "statement": "A transaction is AML-cleared if the counterparty does not appear on any applicable sanctions list and the transaction pattern does not trigger defined suspicious activity thresholds."
+    },
+    {
+      "id": "collateral_coverage",
+      "statement": "Collateral is adequate if its liquidation value at the assumed haircut exceeds the outstanding exposure."
+    }
+  ],
+  "inference_rules": [
+    {
+      "id": "solvency_from_balance_sheet",
+      "premises": ["audited_balance_sheet", "fair_value_adjustments"],
+      "conclusion": "entity_solvent"
+    },
+    {
+      "id": "capital_adequacy_from_ratios",
+      "premises": ["cet1_ratio", "tier1_ratio", "total_capital_ratio"],
+      "conclusion": "capital_adequate"
+    },
+    {
+      "id": "aml_clearance_from_screening",
+      "premises": ["sanctions_screen_result", "transaction_pattern_analysis"],
+      "conclusion": "aml_cleared"
+    },
+    {
+      "id": "collateral_adequacy_from_valuation",
+      "premises": ["collateral_valuation", "exposure_amount", "haircut_schedule"],
+      "conclusion": "collateral_adequate"
+    }
+  ],
+  "claim_templates": [
+    {
+      "id": "solvency_claim",
+      "description": "Assert that an entity is solvent as of a specific measurement date.",
+      "required_premises": ["audited_balance_sheet", "fair_value_adjustments"],
+      "optional_premises": ["going_concern_opinion", "contingent_liabilities"],
+      "conclusion_predicate": "entity_solvent",
+      "inference_chain": ["solvency_from_balance_sheet"]
+    },
+    {
+      "id": "capital_adequacy_claim",
+      "description": "Assert that a bank meets Basel III capital adequacy requirements.",
+      "required_premises": ["cet1_ratio", "tier1_ratio", "total_capital_ratio"],
+      "optional_premises": ["leverage_ratio", "liquidity_coverage"],
+      "conclusion_predicate": "capital_adequate",
+      "inference_chain": ["capital_adequacy_from_ratios"]
+    },
+    {
+      "id": "aml_clearance_claim",
+      "description": "Assert that a transaction is cleared from AML/CFT perspective.",
+      "required_premises": ["sanctions_screen_result", "transaction_pattern_analysis"],
+      "optional_premises": ["beneficial_owner_verification", "source_of_funds"],
+      "conclusion_predicate": "aml_cleared",
+      "inference_chain": ["aml_clearance_from_screening"]
+    },
+    {
+      "id": "collateral_adequacy_claim",
+      "description": "Assert that posted collateral adequately covers the exposure.",
+      "required_premises": ["collateral_valuation", "exposure_amount", "haircut_schedule"],
+      "optional_premises": ["concentration_limits"],
+      "conclusion_predicate": "collateral_adequate",
+      "inference_chain": ["collateral_adequacy_from_valuation"]
+    }
+  ],
+  "consistency_constraints": [
+    {
+      "id": "no_dual_solvency",
+      "description": "Cannot simultaneously hold proved claims of entity_solvent and not_entity_solvent for the same entity and measurement date.",
+      "contradicts_predicate": "not_entity_solvent"
+    },
+    {
+      "id": "no_dual_aml",
+      "description": "Cannot simultaneously hold AML cleared and AML flagged for the same transaction.",
+      "contradicts_predicate": "aml_flagged"
+    }
+  ]
+}

@@ -283,3 +283,83 @@ class AgentStateClient:
             return None
         resp.raise_for_status()
         return resp.json()
+
+    # ── Claim Verification ─────────────────────────────────────────────────────
+
+    def submit_claim(self, ns: str, domain: str, assertion: Dict[str, Any],
+                     premises: Optional[List[Dict]] = None,
+                     consequences: Optional[List[Dict]] = None,
+                     template: Optional[str] = None,
+                     cause: Optional[Dict] = None) -> Dict[str, Any]:
+        """Submit a claim for formal verification and receive a proof artifact.
+
+        Args:
+            ns:           Namespace to store the claim in.
+            domain:       Domain pack identifier, e.g. "healthcare/v1".
+            assertion:    Dict with keys: predicate, subject (opt), object (opt), params (opt).
+            premises:     List of premise refs grounding the claim.
+            consequences: List of testable consequences.
+            template:     Domain template to use, e.g. "drug_safety".
+            cause:        Optional Cause provenance dict.
+
+        Returns:
+            Dict with "claim" and "proof" keys.
+        """
+        body: Dict[str, Any] = {"domain": domain, "assertion": assertion}
+        if template:
+            body["template"] = template
+        if premises:
+            body["premises"] = premises
+        if consequences:
+            body["consequences"] = consequences
+        if cause:
+            body["cause"] = cause
+        resp = self.session.post(
+            f"{self.base_url}/admin/namespaces/{ns}/claims", json=body
+        )
+        resp.raise_for_status()
+        return resp.json()
+
+    def get_claim(self, ns: str, claim_id: str) -> Dict[str, Any]:
+        """Retrieve a stored claim by ID."""
+        resp = self.session.get(
+            f"{self.base_url}/admin/namespaces/{ns}/claims/{claim_id}"
+        )
+        resp.raise_for_status()
+        return resp.json()
+
+    def get_proof(self, ns: str, claim_id: str) -> Dict[str, Any]:
+        """Retrieve the formal proof artifact for a claim."""
+        resp = self.session.get(
+            f"{self.base_url}/admin/namespaces/{ns}/claims/{claim_id}/proof"
+        )
+        resp.raise_for_status()
+        return resp.json()
+
+    def list_claims(self, ns: str) -> List[Dict[str, Any]]:
+        """List all claims in a namespace."""
+        resp = self.session.get(
+            f"{self.base_url}/admin/namespaces/{ns}/claims"
+        )
+        resp.raise_for_status()
+        return resp.json()
+
+    def challenge_claim(self, ns: str, claim_id: str, reason: str,
+                        challenged_step: Optional[int] = None,
+                        counter_evidence: Optional[List[str]] = None) -> Dict[str, Any]:
+        """Submit a challenge against a claim's proof."""
+        body: Dict[str, Any] = {"reason": reason, "counter_evidence": counter_evidence or []}
+        if challenged_step is not None:
+            body["challenged_step"] = challenged_step
+        resp = self.session.post(
+            f"{self.base_url}/admin/namespaces/{ns}/claims/{claim_id}/challenge",
+            json=body,
+        )
+        resp.raise_for_status()
+        return resp.json()
+
+    def list_domains(self) -> List[Dict[str, Any]]:
+        """List all available domain packs."""
+        resp = self.session.get(f"{self.base_url}/admin/domains")
+        resp.raise_for_status()
+        return resp.json()

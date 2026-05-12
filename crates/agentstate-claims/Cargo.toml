@@ -1,0 +1,12 @@
+[package]
+name = "agentstate-claims"
+version = "1.0.0"
+edition = "2021"
+
+[dependencies]
+agentstate-core = { path = "../agentstate-core" }
+serde = { workspace = true }
+serde_json = { workspace = true }
+chrono = { workspace = true }
+ulid = { workspace = true }
+anyhow = { workspace = true }

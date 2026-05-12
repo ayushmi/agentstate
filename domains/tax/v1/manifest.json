@@ -1,0 +1,83 @@
+{
+  "domain": "tax",
+  "version": "v1",
+  "description": "Formal axioms, inference rules, and claim templates for tax compliance. Covers deduction validity, filing status, withholding, and liability estimates. Jurisdiction-parameterized.",
+  "axioms": [
+    {
+      "id": "deduction_eligibility_basis",
+      "statement": "A deduction is eligible if and only if the underlying expense satisfies all statutory conditions for the relevant jurisdiction and tax year, and is supported by adequate documentation."
+    },
+    {
+      "id": "filing_status_exclusivity",
+      "statement": "A taxpayer can hold exactly one filing status for a given tax year. Filing statuses are mutually exclusive."
+    },
+    {
+      "id": "withholding_correctness",
+      "statement": "Withholding is correct if the amount withheld matches the liability computed under the applicable withholding tables for the taxpayer's elections."
+    },
+    {
+      "id": "income_reporting_completeness",
+      "statement": "All income from all sources reportable under the applicable jurisdiction's law must be included in the tax return."
+    }
+  ],
+  "inference_rules": [
+    {
+      "id": "deduction_validity_inference",
+      "premises": ["expense_documentation", "statutory_eligibility_check"],
+      "conclusion": "deduction_valid"
+    },
+    {
+      "id": "filing_status_determination",
+      "premises": ["marital_status_evidence", "household_composition"],
+      "conclusion": "filing_status_determined"
+    },
+    {
+      "id": "liability_estimate_inference",
+      "premises": ["total_income", "applicable_deductions", "tax_rate_schedule"],
+      "conclusion": "tax_liability_estimated"
+    },
+    {
+      "id": "withholding_adequacy_inference",
+      "premises": ["w2_or_1099_data", "liability_estimate"],
+      "conclusion": "withholding_adequate"
+    }
+  ],
+  "claim_templates": [
+    {
+      "id": "deduction_validity",
+      "description": "Assert that a specific deduction is valid for the taxpayer for the tax year.",
+      "required_premises": ["expense_documentation", "statutory_eligibility_check"],
+      "optional_premises": ["prior_year_comparison", "audit_trail"],
+      "conclusion_predicate": "deduction_valid",
+      "inference_chain": ["deduction_validity_inference"]
+    },
+    {
+      "id": "filing_status",
+      "description": "Assert the correct filing status for a taxpayer for a tax year.",
+      "required_premises": ["marital_status_evidence", "household_composition"],
+      "optional_premises": ["dependency_documentation"],
+      "conclusion_predicate": "filing_status_determined",
+      "inference_chain": ["filing_status_determination"]
+    },
+    {
+      "id": "liability_estimate",
+      "description": "Assert an estimated tax liability for a taxpayer for a period.",
+      "required_premises": ["total_income", "applicable_deductions", "tax_rate_schedule"],
+      "optional_premises": ["credits", "alternative_minimum_tax_check"],
+      "conclusion_predicate": "tax_liability_estimated",
+      "inference_chain": ["liability_estimate_inference"]
+    }
+  ],
+  "consistency_constraints": [
+    {
+      "id": "no_dual_filing_status",
+      "description": "Cannot simultaneously hold two different filing statuses for the same taxpayer and tax year.",
+      "contradicts_predicate": "filing_status_determined"
+    },
+    {
+      "id": "no_invalid_deduction_alongside_valid",
+      "description": "Cannot simultaneously hold a claim of deduction_valid and deduction_invalid for the same expense.",
+      "contradicts_predicate": "deduction_invalid"
+    }
+  ]
+}

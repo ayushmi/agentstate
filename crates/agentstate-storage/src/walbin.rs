@@ -26,6 +26,10 @@ pub enum RecType {
     LeaseRelease = 5,
     Idempotency = 6,
     InvariantSet = 7,
+    ClaimAssert = 8,
+    ProofStore = 9,
+    ClaimRetract = 10,
+    ChallengeRecord = 11,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -67,6 +71,26 @@ pub enum RecBody {
     InvariantSet {
         ns: String,
         spec: serde_json::Value,
+    },
+    ClaimAssert {
+        ns: String,
+        claim_id: String,
+        claim: serde_json::Value,
+    },
+    ProofStore {
+        ns: String,
+        claim_id: String,
+        proof_id: String,
+        proof: serde_json::Value,
+    },
+    ClaimRetract {
+        ns: String,
+        claim_id: String,
+    },
+    ChallengeRecord {
+        ns: String,
+        claim_id: String,
+        challenge: serde_json::Value,
     },
 }
 
@@ -260,6 +284,10 @@ impl WalWriter {
             RecBody::LeaseRelease { .. } => RecType::LeaseRelease,
             RecBody::Idempotency { .. } => RecType::Idempotency,
             RecBody::InvariantSet { .. } => RecType::InvariantSet,
+            RecBody::ClaimAssert { .. } => RecType::ClaimAssert,
+            RecBody::ProofStore { .. } => RecType::ProofStore,
+            RecBody::ClaimRetract { .. } => RecType::ClaimRetract,
+            RecBody::ChallengeRecord { .. } => RecType::ChallengeRecord,
         }
     }
 }

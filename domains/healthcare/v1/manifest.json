@@ -1,0 +1,91 @@
+{
+  "domain": "healthcare",
+  "version": "v1",
+  "description": "Formal axioms, inference rules, and claim templates for clinical decision support. Covers drug safety, prescribing, diagnostics, and lab results.",
+  "axioms": [
+    {
+      "id": "no_allergy_implies_class_safe",
+      "statement": "If a patient has no known allergy to drug class C, and drug D belongs to C, then D is not allergically contraindicated for that patient."
+    },
+    {
+      "id": "drug_class_membership",
+      "statement": "Drug class membership is a stable relationship derived from pharmacological classification (e.g., metformin is a biguanide)."
+    },
+    {
+      "id": "no_documented_interaction",
+      "statement": "If no adverse interaction between drug D and the patient's current medications is documented in the reference database, co-administration is permissible."
+    },
+    {
+      "id": "lab_reference_range",
+      "statement": "A lab value within the published reference range for the patient's demographic is clinically normal."
+    }
+  ],
+  "inference_rules": [
+    {
+      "id": "allergy_clearance",
+      "premises": ["allergy_history", "drug_class_membership"],
+      "conclusion": "not_allergically_contraindicated"
+    },
+    {
+      "id": "interaction_clearance",
+      "premises": ["current_medications", "interaction_database"],
+      "conclusion": "no_adverse_interaction"
+    },
+    {
+      "id": "prescribing_safety",
+      "premises": ["not_allergically_contraindicated", "no_adverse_interaction", "dosage_evidence"],
+      "conclusion": "safe_to_prescribe"
+    },
+    {
+      "id": "diagnostic_inference",
+      "premises": ["symptom_evidence", "test_result"],
+      "conclusion": "diagnosis_supported"
+    }
+  ],
+  "claim_templates": [
+    {
+      "id": "drug_safety",
+      "description": "Assert that a specific drug is safe to prescribe for a specific patient given available evidence.",
+      "required_premises": ["allergy_history", "current_medications", "dosage_evidence"],
+      "optional_premises": ["prior_exposure", "renal_function", "hepatic_function"],
+      "conclusion_predicate": "safe_to_prescribe",
+      "inference_chain": ["allergy_clearance", "interaction_clearance", "prescribing_safety"]
+    },
+    {
+      "id": "contraindication",
+      "description": "Assert that a drug is contraindicated for a patient.",
+      "required_premises": ["contraindication_evidence"],
+      "optional_premises": ["allergy_history"],
+      "conclusion_predicate": "not_safe_to_prescribe",
+      "inference_chain": []
+    },
+    {
+      "id": "diagnosis",
+      "description": "Assert a clinical diagnosis based on symptoms and test results.",
+      "required_premises": ["symptom_evidence", "test_result"],
+      "optional_premises": ["imaging_result", "specialist_note"],
+      "conclusion_predicate": "diagnosis_supported",
+      "inference_chain": ["diagnostic_inference"]
+    },
+    {
+      "id": "lab_normal",
+      "description": "Assert that a lab result is within normal range for the patient.",
+      "required_premises": ["lab_result", "reference_range"],
+      "optional_premises": [],
+      "conclusion_predicate": "lab_value_normal",
+      "inference_chain": []
+    }
+  ],
+  "consistency_constraints": [
+    {
+      "id": "no_dual_safety_ruling",
+      "description": "Cannot simultaneously hold proved claims of safe_to_prescribe and not_safe_to_prescribe for the same patient+drug pair.",
+      "contradicts_predicate": "not_safe_to_prescribe"
+    },
+    {
+      "id": "no_dual_contraindication",
+      "description": "Cannot simultaneously hold a contraindication and a safety clearance.",
+      "contradicts_predicate": "safe_to_prescribe"
+    }
+  ]
+}

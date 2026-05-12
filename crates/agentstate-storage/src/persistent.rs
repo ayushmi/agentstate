@@ -50,6 +50,31 @@ impl PersistentStore {
                 RecBody::InvariantSet { ns, spec } => {
                     mem.set_invariant(&ns, spec);
                 }
+                RecBody::ClaimAssert {
+                    ns,
+                    claim_id,
+                    claim,
+                } => {
+                    mem.store_claim_mem(&ns, &claim_id, claim);
+                }
+                RecBody::ProofStore {
+                    ns,
+                    claim_id,
+                    proof_id,
+                    proof,
+                } => {
+                    mem.store_proof_mem(&ns, &claim_id, &proof_id, proof);
+                }
+                RecBody::ClaimRetract { ns: _, claim_id: _ } => {
+                    // Retraction is handled by proof status update in proof_store.
+                }
+                RecBody::ChallengeRecord {
+                    ns: _,
+                    claim_id,
+                    challenge,
+                } => {
+                    mem.store_challenge_mem(&claim_id, challenge);
+                }
             }
         }
         Ok(Self {
@@ -302,6 +327,104 @@ impl Storage for PersistentStore {
 
     async fn get_namespace_invariant(&self, ns: &str) -> Result<Option<serde_json::Value>> {
         Ok(self.mem.get_invariant(ns))
+    }
+
+    async fn store_claim(
+        &self,
+        ns: &str,
+        claim_id: &str,
+        claim: serde_json::Value,
+    ) -> Result<()> {
+        self.mem.store_claim_mem(ns, claim_id, claim.clone());
+        let wal = self.wal.lock().await;
+        wal.append(
+            0,
+            Utc::now().timestamp(),
+            &RecBody::ClaimAssert {
+                ns: ns.to_string(),
+                claim_id: claim_id.to_string(),
+                claim,
+            },
+        )
+        .await
+        .map_err(|e| StateError::Internal(e.to_string()))
+    }
+
+    async fn get_claim(
+        &self,
+        ns: &str,
+        claim_id: &str,
+    ) -> Result<Option<serde_json::Value>> {
+        Ok(self.mem.get_claim_mem(ns, claim_id))
+    }
+
+    async fn store_proof(
+        &self,
+        ns: &str,
+        claim_id: &str,
+        proof_id: &str,
+        proof: serde_json::Value,
+    ) -> Result<()> {
+        self.mem
+            .store_proof_mem(ns, claim_id, proof_id, proof.clone());
+        let wal = self.wal.lock().await;
+        wal.append(
+            0,
+            Utc::now().timestamp(),
+            &RecBody::ProofStore {
+                ns: ns.to_string(),
+                claim_id: claim_id.to_string(),
+                proof_id: proof_id.to_string(),
+                proof,
+            },
+        )
+        .await
+        .map_err(|e| StateError::Internal(e.to_string()))
+    }
+
+    async fn get_proof_by_claim(
+        &self,
+        ns: &str,
+        claim_id: &str,
+    ) -> Result<Option<serde_json::Value>> {
+        Ok(self.mem.get_proof_by_claim_mem(ns, claim_id))
+    }
+
+    async fn list_claims(&self, ns: &str) -> Result<Vec<serde_json::Value>> {
+        Ok(self.mem.list_claims_mem(ns))
+    }
+
+    async fn store_challenge(
+        &self,
+        ns: &str,
+        claim_id: &str,
+        challenge: serde_json::Value,
+    ) -> Result<()> {
+        self.mem.store_challenge_mem(claim_id, challenge.clone());
+        let wal = self.wal.lock().await;
+        wal.append(
+            0,
+            Utc::now().timestamp(),
+            &RecBody::ChallengeRecord {
+                ns: ns.to_string(),
+                claim_id: claim_id.to_string(),
+                challenge,
+            },
+        )
+        .await
+        .map_err(|e| StateError::Internal(e.to_string()))
+    }
+
+    async fn get_challenges(
+        &self,
+        _ns: &str,
+        claim_id: &str,
+    ) -> Result<Vec<serde_json::Value>> {
+        Ok(self.mem.get_challenges_mem(claim_id))
+    }
+
+    async fn get_proofs_for_ns(&self, ns: &str) -> Result<Vec<serde_json::Value>> {
+        Ok(self.mem.get_proofs_for_ns_mem(ns))
     }
 
     async fn admin_trim_wal(&self, snapshot_id: &str) -> Result<Vec<String>> {

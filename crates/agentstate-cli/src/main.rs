@@ -2,6 +2,74 @@ use agentstate_storage::walbin;
 use agentstate_verify;
 use anyhow::Result;
 use clap::{Parser, Subcommand};
+use reqwest::blocking::Client;
+
+#[derive(Subcommand)]
+enum ClaimCmd {
+    /// Submit a new claim and print the resulting proof.
+    Submit {
+        /// Server base URL
+        #[arg(long, default_value = "http://localhost:8080")]
+        server: String,
+        /// Namespace
+        #[arg(long, short = 'n')]
+        ns: String,
+        /// Path to a JSON file containing the ClaimRequest body
+        #[arg(long, short = 'f')]
+        file: String,
+    },
+    /// Get a stored claim by ID.
+    Get {
+        /// Server base URL
+        #[arg(long, default_value = "http://localhost:8080")]
+        server: String,
+        /// Namespace
+        #[arg(long, short = 'n')]
+        ns: String,
+        /// Claim ID
+        id: String,
+    },
+    /// Get the formal proof for a claim.
+    Proof {
+        /// Server base URL
+        #[arg(long, default_value = "http://localhost:8080")]
+        server: String,
+        /// Namespace
+        #[arg(long, short = 'n')]
+        ns: String,
+        /// Claim ID
+        id: String,
+    },
+    /// List all claims in a namespace.
+    List {
+        /// Server base URL
+        #[arg(long, default_value = "http://localhost:8080")]
+        server: String,
+        /// Namespace
+        #[arg(long, short = 'n')]
+        ns: String,
+    },
+    /// Submit a challenge against a claim's proof.
+    Challenge {
+        /// Server base URL
+        #[arg(long, default_value = "http://localhost:8080")]
+        server: String,
+        /// Namespace
+        #[arg(long, short = 'n')]
+        ns: String,
+        /// Claim ID to challenge
+        id: String,
+        /// Reason for the challenge
+        #[arg(long)]
+        reason: String,
+        /// Specific step index to challenge (optional; omit to challenge the whole proof)
+        #[arg(long)]
+        step: Option<usize>,
+        /// Source or claim IDs that provide counter-evidence (repeatable)
+        #[arg(long)]
+        counter: Vec<String>,
+    },
+}
 
 #[derive(Parser)]
 #[command(name = "agentstate")]
@@ -37,6 +105,15 @@ enum Cmd {
         /// Exit with code 1 if any property fails
         #[arg(long)]
         fail_on_violation: bool,
+    },
+    /// Submit a claim for verification and retrieve the formal proof.
+    #[command(subcommand)]
+    Claim(ClaimCmd),
+    /// List built-in and registered domain packs.
+    Domain {
+        /// Server base URL
+        #[arg(long, default_value = "http://localhost:8080")]
+        server: String,
     },
     /// Show the full state history of a single object, with field-level diffs between versions.
     Replay {
@@ -133,6 +210,76 @@ fn main() -> Result<()> {
                 std::process::exit(1);
             }
         }
+        Cmd::Domain { server } => {
+            let client = Client::new();
+            let resp = client
+                .get(format!("{}/admin/domains", server))
+                .send()?
+                .error_for_status()?;
+            let body: serde_json::Value = resp.json()?;
+            println!("{}", serde_json::to_string_pretty(&body)?);
+        }
+        Cmd::Claim(claim_cmd) => match claim_cmd {
+            ClaimCmd::Submit { server, ns, file } => {
+                let body: serde_json::Value =
+                    serde_json::from_str(&std::fs::read_to_string(&file)?)?;
+                let client = Client::new();
+                let resp = client
+                    .post(format!("{}/admin/namespaces/{}/claims", server, ns))
+                    .json(&body)
+                    .send()?
+                    .error_for_status()?;
+                let out: serde_json::Value = resp.json()?;
+                println!("{}", serde_json::to_string_pretty(&out)?);
+            }
+            ClaimCmd::Get { server, ns, id } => {
+                let resp = Client::new()
+                    .get(format!("{}/admin/namespaces/{}/claims/{}", server, ns, id))
+                    .send()?
+                    .error_for_status()?;
+                println!("{}", serde_json::to_string_pretty(&resp.json::<serde_json::Value>()?)?);
+            }
+            ClaimCmd::Proof { server, ns, id } => {
+                let resp = Client::new()
+                    .get(format!(
+                        "{}/admin/namespaces/{}/claims/{}/proof",
+                        server, ns, id
+                    ))
+                    .send()?
+                    .error_for_status()?;
+                println!("{}", serde_json::to_string_pretty(&resp.json::<serde_json::Value>()?)?);
+            }
+            ClaimCmd::List { server, ns } => {
+                let resp = Client::new()
+                    .get(format!("{}/admin/namespaces/{}/claims", server, ns))
+                    .send()?
+                    .error_for_status()?;
+                println!("{}", serde_json::to_string_pretty(&resp.json::<serde_json::Value>()?)?);
+            }
+            ClaimCmd::Challenge {
+                server,
+                ns,
+                id,
+                reason,
+                step,
+                counter,
+            } => {
+                let body = serde_json::json!({
+                    "challenged_step": step,
+                    "reason": reason,
+                    "counter_evidence": counter,
+                });
+                let resp = Client::new()
+                    .post(format!(
+                        "{}/admin/namespaces/{}/claims/{}/challenge",
+                        server, ns, id
+                    ))
+                    .json(&body)
+                    .send()?
+                    .error_for_status()?;
+                println!("{}", serde_json::to_string_pretty(&resp.json::<serde_json::Value>()?)?);
+            }
+        },
         Cmd::Replay {
             object_id,
             dir,

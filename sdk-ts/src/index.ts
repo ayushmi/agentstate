@@ -21,6 +21,85 @@ export interface InvariantSpec {
   rules: InvariantRule[];
 }
 
+// ── Claim Verification Types ────────────────────────────────────────────────
+
+export interface ClaimAssertion {
+  predicate: string;
+  subject?: any;
+  object?: any;
+  params?: any;
+}
+
+export interface PremiseRef {
+  kind: 'source' | 'wal_state' | 'domain_axiom' | 'prior_claim';
+  id?: string;
+  role?: string;
+  ns?: string;
+  object_id?: string;
+  field?: string;
+  at_commit?: string;
+  axiom_id?: string;
+  claim_id?: string;
+}
+
+export interface Consequence {
+  predicate: any;
+  check_after_hours?: number;
+  status?: 'pending' | 'holds' | 'violated';
+}
+
+export interface ClaimRequest {
+  domain: string;
+  template?: string;
+  assertion: ClaimAssertion;
+  premises?: PremiseRef[];
+  consequences?: Consequence[];
+  scope?: { namespace: string; valid_until?: string };
+  cause?: { actor?: string; trigger?: string; note?: string };
+}
+
+export interface InferenceStep {
+  step_id: number;
+  kind: 'ground' | 'inference' | 'conclusion';
+  rule: string;
+  premises_used: number[];
+  conclusion_predicate: string;
+  conclusion_desc: string;
+  justified_by?: string;
+}
+
+export interface ProofProperties {
+  self_consistent: boolean;
+  minimal: boolean;
+  has_predictive_constraint: boolean;
+  verifiable: boolean;
+  sound: boolean;
+  monotonic: boolean;
+}
+
+export interface Proof {
+  proof_id: string;
+  claim_id: string;
+  ns: string;
+  domain: string;
+  status: 'proving' | 'proved' | 'refuted' | 'inconclusive' | 'challenged';
+  properties: ProofProperties;
+  conclusion: any;
+  confidence: string;
+  steps: InferenceStep[];
+  assumptions: string[];
+  refutation_reason?: string;
+  ts: string;
+  commit: string;
+}
+
+export interface DomainInfo {
+  domain: string;
+  version: string;
+  description: string;
+  templates: string[];
+}
+
 /** Records why a state change happened. All fields are optional. */
 export interface Cause {
   actor?: string;   // agent ID making this change
@@ -227,6 +306,51 @@ export class AgentStateClient {
    */
   async put(type: string, body: any, tags?: Tags, ttl_seconds?: number, id?: string, cause?: Cause): Promise<Agent> {
     return this.createAgent(type, body, tags, id, cause);
+  }
+
+  // ── Claim Verification ────────────────────────────────────────────────────
+
+  /** Submit a claim for formal verification. Returns the claim and proof. */
+  async submitClaim(ns: string, req: ClaimRequest): Promise<{ claim: any; proof: Proof }> {
+    const resp = await this.http.post(`${this.baseUrl}/admin/namespaces/${ns}/claims`, req);
+    return resp.data;
+  }
+
+  /** Get a stored claim by ID. */
+  async getClaim(ns: string, claimId: string): Promise<any> {
+    const resp = await this.http.get(`${this.baseUrl}/admin/namespaces/${ns}/claims/${claimId}`);
+    return resp.data;
+  }
+
+  /** Get the formal proof artifact for a claim. */
+  async getProof(ns: string, claimId: string): Promise<Proof> {
+    const resp = await this.http.get(`${this.baseUrl}/admin/namespaces/${ns}/claims/${claimId}/proof`);
+    return resp.data;
+  }
+
+  /** List all claims in a namespace. */
+  async listClaims(ns: string): Promise<any[]> {
+    const resp = await this.http.get(`${this.baseUrl}/admin/namespaces/${ns}/claims`);
+    return resp.data;
+  }
+
+  /** Submit a challenge against a claim's proof. */
+  async challengeClaim(ns: string, claimId: string, reason: string, opts?: {
+    challenged_step?: number;
+    counter_evidence?: string[];
+  }): Promise<any> {
+    const resp = await this.http.post(`${this.baseUrl}/admin/namespaces/${ns}/claims/${claimId}/challenge`, {
+      reason,
+      challenged_step: opts?.challenged_step,
+      counter_evidence: opts?.counter_evidence ?? [],
+    });
+    return resp.data;
+  }
+
+  /** List all available domain packs. */
+  async listDomains(): Promise<DomainInfo[]> {
+    const resp = await this.http.get(`${this.baseUrl}/admin/domains`);
+    return resp.data;
   }
 
   /**

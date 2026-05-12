@@ -1,0 +1,91 @@
+{
+  "domain": "legal",
+  "version": "v1",
+  "description": "Formal axioms, inference rules, and claim templates for legal compliance. Covers contract validity, jurisdiction, statute of limitations, and regulatory compliance.",
+  "axioms": [
+    {
+      "id": "contract_validity_elements",
+      "statement": "A contract is valid if and only if it satisfies all five elements: offer, acceptance, consideration, capacity of all parties, and lawful purpose. Absence of any element renders it void or voidable."
+    },
+    {
+      "id": "jurisdiction_basis",
+      "statement": "Jurisdiction is determined by the governing law clause of the instrument, subject to mandatory overriding law of the forum."
+    },
+    {
+      "id": "limitation_period_basis",
+      "statement": "A claim is within the limitation period if the cause of action accrued within the statutory period applicable to the claim type and jurisdiction."
+    },
+    {
+      "id": "regulatory_compliance_basis",
+      "statement": "An entity is compliant with a regulation if it has satisfied all mandatory requirements specified in the applicable regulatory instrument as of the compliance date."
+    }
+  ],
+  "inference_rules": [
+    {
+      "id": "contract_validity_inference",
+      "premises": ["offer_evidence", "acceptance_evidence", "consideration_evidence", "capacity_evidence", "legality_evidence"],
+      "conclusion": "contract_valid"
+    },
+    {
+      "id": "jurisdiction_determination",
+      "premises": ["governing_law_clause", "forum_mandatory_law"],
+      "conclusion": "jurisdiction_determined"
+    },
+    {
+      "id": "limitation_clearance",
+      "premises": ["accrual_date", "limitation_period", "tolling_events"],
+      "conclusion": "claim_within_limitation"
+    },
+    {
+      "id": "regulatory_compliance_inference",
+      "premises": ["compliance_checklist", "regulatory_instrument"],
+      "conclusion": "regulatory_compliant"
+    }
+  ],
+  "claim_templates": [
+    {
+      "id": "contract_validity",
+      "description": "Assert that a contract is legally valid and enforceable.",
+      "required_premises": ["offer_evidence", "acceptance_evidence", "consideration_evidence", "capacity_evidence", "legality_evidence"],
+      "optional_premises": ["execution_evidence", "notarisation"],
+      "conclusion_predicate": "contract_valid",
+      "inference_chain": ["contract_validity_inference"]
+    },
+    {
+      "id": "jurisdiction_claim",
+      "description": "Assert the governing jurisdiction for a legal instrument.",
+      "required_premises": ["governing_law_clause", "forum_mandatory_law"],
+      "optional_premises": ["choice_of_law_analysis"],
+      "conclusion_predicate": "jurisdiction_determined",
+      "inference_chain": ["jurisdiction_determination"]
+    },
+    {
+      "id": "limitation_claim",
+      "description": "Assert that a claim is within the applicable limitation period.",
+      "required_premises": ["accrual_date", "limitation_period", "tolling_events"],
+      "optional_premises": ["equitable_tolling_analysis"],
+      "conclusion_predicate": "claim_within_limitation",
+      "inference_chain": ["limitation_clearance"]
+    },
+    {
+      "id": "regulatory_compliance_claim",
+      "description": "Assert that an entity is compliant with a specific regulation.",
+      "required_premises": ["compliance_checklist", "regulatory_instrument"],
+      "optional_premises": ["audit_trail", "remediation_evidence"],
+      "conclusion_predicate": "regulatory_compliant",
+      "inference_chain": ["regulatory_compliance_inference"]
+    }
+  ],
+  "consistency_constraints": [
+    {
+      "id": "no_dual_contract_validity",
+      "description": "Cannot simultaneously hold contract_valid and contract_void for the same instrument.",
+      "contradicts_predicate": "contract_void"
+    },
+    {
+      "id": "no_dual_compliance",
+      "description": "Cannot simultaneously hold regulatory_compliant and regulatory_non_compliant for the same entity+regulation.",
+      "contradicts_predicate": "regulatory_non_compliant"
+    }
+  ]
+}

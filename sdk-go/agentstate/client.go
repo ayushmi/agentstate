@@ -255,3 +255,94 @@ func (c *Client) GetInvariant(ns string) (map[string]any, error) {
 	}
 	return result, nil
 }
+
+// ── Claim Verification ────────────────────────────────────────────────────────
+
+// ClaimSubmitResult is returned by SubmitClaim — it contains both the stored
+// claim and its formal proof artifact.
+type ClaimSubmitResult struct {
+	Claim map[string]any `json:"claim"`
+	Proof map[string]any `json:"proof"`
+}
+
+// SubmitClaim submits a claim for formal verification and returns the claim
+// together with its proof artifact.
+//
+//	result, err := client.SubmitClaim("production", map[string]any{
+//	    "domain": "healthcare/v1",
+//	    "template": "drug_safety",
+//	    "assertion": map[string]any{
+//	        "predicate": "safe_to_prescribe",
+//	        "subject":   map[string]any{"patient_id": "p-001"},
+//	        "object":    map[string]any{"drug": "amoxicillin"},
+//	    },
+//	    "premises": []map[string]any{
+//	        {"kind":"source","id":"allergy-db-v3","role":"allergy_clearance"},
+//	    },
+//	})
+func (c *Client) SubmitClaim(ns string, req map[string]any) (*ClaimSubmitResult, error) {
+	hreq, err := c.newRequest("POST", fmt.Sprintf("/admin/namespaces/%s/claims", ns), req)
+	if err != nil {
+		return nil, err
+	}
+	var result ClaimSubmitResult
+	return &result, c.do(hreq, &result)
+}
+
+// GetClaim retrieves a stored claim by ID.
+func (c *Client) GetClaim(ns, claimID string) (map[string]any, error) {
+	hreq, err := c.newRequest("GET", fmt.Sprintf("/admin/namespaces/%s/claims/%s", ns, claimID), nil)
+	if err != nil {
+		return nil, err
+	}
+	var result map[string]any
+	return result, c.do(hreq, &result)
+}
+
+// GetProof retrieves the formal proof artifact for a claim.
+func (c *Client) GetProof(ns, claimID string) (map[string]any, error) {
+	hreq, err := c.newRequest("GET", fmt.Sprintf("/admin/namespaces/%s/claims/%s/proof", ns, claimID), nil)
+	if err != nil {
+		return nil, err
+	}
+	var result map[string]any
+	return result, c.do(hreq, &result)
+}
+
+// ListClaims returns all claims stored in a namespace.
+func (c *Client) ListClaims(ns string) ([]map[string]any, error) {
+	hreq, err := c.newRequest("GET", fmt.Sprintf("/admin/namespaces/%s/claims", ns), nil)
+	if err != nil {
+		return nil, err
+	}
+	var result []map[string]any
+	return result, c.do(hreq, &result)
+}
+
+// ChallengeClaim submits a challenge against a claim's proof.
+// challengedStep is the 0-based step index to challenge, or -1 to challenge the entire proof.
+func (c *Client) ChallengeClaim(ns, claimID, reason string, challengedStep int, counterEvidence []string) (map[string]any, error) {
+	payload := map[string]any{
+		"reason":           reason,
+		"counter_evidence": counterEvidence,
+	}
+	if challengedStep >= 0 {
+		payload["challenged_step"] = challengedStep
+	}
+	hreq, err := c.newRequest("POST", fmt.Sprintf("/admin/namespaces/%s/claims/%s/challenge", ns, claimID), payload)
+	if err != nil {
+		return nil, err
+	}
+	var result map[string]any
+	return result, c.do(hreq, &result)
+}
+
+// ListDomains returns all available domain packs.
+func (c *Client) ListDomains() ([]map[string]any, error) {
+	hreq, err := c.newRequest("GET", "/admin/domains", nil)
+	if err != nil {
+		return nil, err
+	}
+	var result []map[string]any
+	return result, c.do(hreq, &result)
+}

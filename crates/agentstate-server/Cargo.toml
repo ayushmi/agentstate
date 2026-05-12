@@ -9,6 +9,7 @@ tonic-build = "0.11"
 [dependencies]
 agentstate-core = { path = "../agentstate-core" }
 agentstate-storage = { path = "../agentstate-storage" }
+agentstate-claims = { path = "../agentstate-claims" }
 axum = { workspace = true }
 tokio = { workspace = true }
 serde = { workspace = true }

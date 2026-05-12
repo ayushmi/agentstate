@@ -36,6 +36,12 @@ struct Inner {
     idem: HashMap<(String, String), super::traits::IdempotencyRecord>,
     // Namespace invariants: ns -> predicate spec JSON
     invariants: HashMap<String, serde_json::Value>,
+    // Claim verification storage
+    claim_store: HashMap<(String, String), serde_json::Value>, // (ns, claim_id) -> Claim JSON
+    proof_store: HashMap<String, serde_json::Value>,           // proof_id -> Proof JSON
+    claim_proof_map: HashMap<(String, String), String>,        // (ns, claim_id) -> proof_id
+    ns_claims: HashMap<String, Vec<String>>,                   // ns -> [claim_ids]
+    challenge_store: HashMap<String, Vec<serde_json::Value>>,  // claim_id -> [Challenge JSON]
 }
 
 #[derive(Clone, Default)]
@@ -186,6 +192,102 @@ impl InMemoryStore {
     pub fn get_invariant(&self, ns: &str) -> Option<serde_json::Value> {
         let inner = self.inner.read();
         inner.invariants.get(ns).cloned()
+    }
+
+    pub fn store_claim_mem(&self, ns: &str, claim_id: &str, claim: serde_json::Value) {
+        let mut inner = self.inner.write();
+        inner
+            .claim_store
+            .insert((ns.to_string(), claim_id.to_string()), claim);
+        inner
+            .ns_claims
+            .entry(ns.to_string())
+            .or_default()
+            .push(claim_id.to_string());
+    }
+
+    pub fn get_claim_mem(&self, ns: &str, claim_id: &str) -> Option<serde_json::Value> {
+        let inner = self.inner.read();
+        inner
+            .claim_store
+            .get(&(ns.to_string(), claim_id.to_string()))
+            .cloned()
+    }
+
+    pub fn store_proof_mem(
+        &self,
+        ns: &str,
+        claim_id: &str,
+        proof_id: &str,
+        proof: serde_json::Value,
+    ) {
+        let mut inner = self.inner.write();
+        inner.proof_store.insert(proof_id.to_string(), proof);
+        inner
+            .claim_proof_map
+            .insert((ns.to_string(), claim_id.to_string()), proof_id.to_string());
+    }
+
+    pub fn get_proof_by_claim_mem(&self, ns: &str, claim_id: &str) -> Option<serde_json::Value> {
+        let inner = self.inner.read();
+        let proof_id = inner
+            .claim_proof_map
+            .get(&(ns.to_string(), claim_id.to_string()))?;
+        inner.proof_store.get(proof_id).cloned()
+    }
+
+    pub fn list_claims_mem(&self, ns: &str) -> Vec<serde_json::Value> {
+        let inner = self.inner.read();
+        inner
+            .ns_claims
+            .get(ns)
+            .map(|ids| {
+                ids.iter()
+                    .filter_map(|id| {
+                        inner
+                            .claim_store
+                            .get(&(ns.to_string(), id.clone()))
+                            .cloned()
+                    })
+                    .collect()
+            })
+            .unwrap_or_default()
+    }
+
+    pub fn get_proofs_for_ns_mem(&self, ns: &str) -> Vec<serde_json::Value> {
+        let inner = self.inner.read();
+        inner
+            .ns_claims
+            .get(ns)
+            .map(|ids| {
+                ids.iter()
+                    .filter_map(|id| {
+                        inner
+                            .claim_proof_map
+                            .get(&(ns.to_string(), id.clone()))
+                            .and_then(|pid| inner.proof_store.get(pid).cloned())
+                    })
+                    .collect()
+            })
+            .unwrap_or_default()
+    }
+
+    pub fn store_challenge_mem(&self, claim_id: &str, challenge: serde_json::Value) {
+        let mut inner = self.inner.write();
+        inner
+            .challenge_store
+            .entry(claim_id.to_string())
+            .or_default()
+            .push(challenge);
+    }
+
+    pub fn get_challenges_mem(&self, claim_id: &str) -> Vec<serde_json::Value> {
+        let inner = self.inner.read();
+        inner
+            .challenge_store
+            .get(claim_id)
+            .cloned()
+            .unwrap_or_default()
     }
 
     pub fn backlog_map(&self) -> std::collections::HashMap<String, usize> {
@@ -680,6 +782,72 @@ impl Storage for InMemoryStore {
         ns: &str,
     ) -> agentstate_core::Result<Option<serde_json::Value>> {
         Ok(InMemoryStore::get_invariant(self, ns))
+    }
+
+    async fn store_claim(
+        &self,
+        ns: &str,
+        claim_id: &str,
+        claim: serde_json::Value,
+    ) -> agentstate_core::Result<()> {
+        self.store_claim_mem(ns, claim_id, claim);
+        Ok(())
+    }
+
+    async fn get_claim(
+        &self,
+        ns: &str,
+        claim_id: &str,
+    ) -> agentstate_core::Result<Option<serde_json::Value>> {
+        Ok(self.get_claim_mem(ns, claim_id))
+    }
+
+    async fn store_proof(
+        &self,
+        ns: &str,
+        claim_id: &str,
+        proof_id: &str,
+        proof: serde_json::Value,
+    ) -> agentstate_core::Result<()> {
+        self.store_proof_mem(ns, claim_id, proof_id, proof);
+        Ok(())
+    }
+
+    async fn get_proof_by_claim(
+        &self,
+        ns: &str,
+        claim_id: &str,
+    ) -> agentstate_core::Result<Option<serde_json::Value>> {
+        Ok(self.get_proof_by_claim_mem(ns, claim_id))
+    }
+
+    async fn list_claims(&self, ns: &str) -> agentstate_core::Result<Vec<serde_json::Value>> {
+        Ok(self.list_claims_mem(ns))
+    }
+
+    async fn store_challenge(
+        &self,
+        _ns: &str,
+        claim_id: &str,
+        challenge: serde_json::Value,
+    ) -> agentstate_core::Result<()> {
+        self.store_challenge_mem(claim_id, challenge);
+        Ok(())
+    }
+
+    async fn get_challenges(
+        &self,
+        _ns: &str,
+        claim_id: &str,
+    ) -> agentstate_core::Result<Vec<serde_json::Value>> {
+        Ok(self.get_challenges_mem(claim_id))
+    }
+
+    async fn get_proofs_for_ns(
+        &self,
+        ns: &str,
+    ) -> agentstate_core::Result<Vec<serde_json::Value>> {
+        Ok(self.get_proofs_for_ns_mem(ns))
     }
 }
 

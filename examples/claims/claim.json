@@ -1,0 +1,31 @@
+{
+  "domain": "finance/v1",
+  "template": "solvency_claim",
+  "assertion": {
+    "predicate": "entity_solvent",
+    "subject": {"entity_id": "acme-corp", "jurisdiction": "US"},
+    "params": {"as_of_date": "2026-05-01"}
+  },
+  "premises": [
+    {
+      "kind": "source",
+      "id": "balance-sheet-2026-Q1",
+      "role": "assets_exceed_liabilities"
+    },
+    {
+      "kind": "domain_axiom",
+      "axiom_id": "solvency_definition",
+      "role": "solvency_definition"
+    }
+  ],
+  "consequences": [
+    {
+      "predicate": {"field": "body.credit_rating", "required": true},
+      "check_after_hours": 48
+    }
+  ],
+  "cause": {
+    "actor": "risk-assessment-agent",
+    "note": "quarterly solvency review"
+  }
+}

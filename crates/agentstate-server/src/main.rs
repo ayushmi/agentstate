@@ -1,3 +1,6 @@
+use agentstate_claims::{
+    build_proof, Challenge, ChallengeRequest, Claim, ClaimRequest, DomainRegistry,
+};
 use agentstate_core::{PutRequest, QueryRequest, StateError};
 use agentstate_storage::{InMemoryStore, PersistentStore, Storage};
 use axum::http::StatusCode;
@@ -33,6 +36,7 @@ use tonic::{transport::Server as GrpcServer, Request, Response as TonicResponse,
 #[derive(Clone)]
 struct AppState {
     store: Arc<dyn Storage>,
+    domains: Arc<DomainRegistry>,
     // simple in-memory idempotency cache: (ns, key)-> (ts, response json)
     idem: Arc<
         parking_lot::RwLock<
@@ -90,6 +94,7 @@ async fn main() -> anyhow::Result<()> {
     };
     let state = AppState {
         store,
+        domains: Arc::new(DomainRegistry::new()),
         idem: Arc::new(parking_lot::RwLock::new(std::collections::HashMap::new())),
         qps: Arc::new(parking_lot::RwLock::new(std::collections::HashMap::new())),
     };
@@ -172,6 +177,11 @@ async fn main() -> anyhow::Result<()> {
             "/admin/namespaces/:ns/invariants",
             post(admin_set_invariant).get(admin_get_invariant),
         )
+        .route("/admin/namespaces/:ns/claims", post(claim_submit).get(claim_list))
+        .route("/admin/namespaces/:ns/claims/:id", get(claim_get))
+        .route("/admin/namespaces/:ns/claims/:id/proof", get(claim_proof))
+        .route("/admin/namespaces/:ns/claims/:id/challenge", post(claim_challenge))
+        .route("/admin/domains", get(list_domains))
         .route("/metrics", get(metrics))
         .with_state(state)
         .layer(
@@ -920,6 +930,196 @@ async fn lease_release(
         Ok(_) => (StatusCode::NO_CONTENT).into_response(),
         Err(e) => (StatusCode::CONFLICT, Json(json!({"error": e.to_string()}))).into_response(),
     }
+}
+
+// ── Claim Verification Endpoints ────────────────────────────────────────────
+
+async fn claim_submit(
+    State(app): State<AppState>,
+    Path(ns): Path<String>,
+    headers: HeaderMap,
+    Json(req): Json<ClaimRequest>,
+) -> impl IntoResponse {
+    if let Err(resp) = enforce_caps(&headers, &ns, "admin") {
+        return resp.into_response();
+    }
+    let domain_pack = match app.domains.get(&req.domain) {
+        Some(d) => d,
+        None => {
+            return (
+                StatusCode::BAD_REQUEST,
+                Json(json!({"error": format!("unknown domain: {}", req.domain)})),
+            )
+                .into_response()
+        }
+    };
+    let claim = Claim::from_request(ns.clone(), req);
+    let claim_json = serde_json::to_value(&claim).unwrap();
+    if let Err(e) = app.store.store_claim(&ns, &claim.id, claim_json.clone()).await {
+        return (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(json!({"error": e.to_string()})),
+        )
+            .into_response();
+    }
+    // Collect existing proofs for consistency checks
+    let existing_proofs = app
+        .store
+        .get_proofs_for_ns(&ns)
+        .await
+        .unwrap_or_default()
+        .into_iter()
+        .filter_map(|v| serde_json::from_value(v).ok())
+        .collect::<Vec<_>>();
+    let proof = build_proof(&claim, &domain_pack, &existing_proofs);
+    let proof_json = serde_json::to_value(&proof).unwrap();
+    if let Err(e) = app
+        .store
+        .store_proof(&ns, &claim.id, &proof.proof_id, proof_json.clone())
+        .await
+    {
+        return (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(json!({"error": e.to_string()})),
+        )
+            .into_response();
+    }
+    (
+        StatusCode::OK,
+        Json(json!({"claim": claim_json, "proof": proof_json})),
+    )
+        .into_response()
+}
+
+async fn claim_list(
+    State(app): State<AppState>,
+    Path(ns): Path<String>,
+    headers: HeaderMap,
+) -> impl IntoResponse {
+    if let Err(resp) = enforce_caps(&headers, &ns, "admin") {
+        return resp.into_response();
+    }
+    match app.store.list_claims(&ns).await {
+        Ok(claims) => (StatusCode::OK, Json(claims)).into_response(),
+        Err(e) => (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(json!({"error": e.to_string()})),
+        )
+            .into_response(),
+    }
+}
+
+async fn claim_get(
+    State(app): State<AppState>,
+    Path((ns, id)): Path<(String, String)>,
+    headers: HeaderMap,
+) -> impl IntoResponse {
+    if let Err(resp) = enforce_caps(&headers, &ns, "admin") {
+        return resp.into_response();
+    }
+    match app.store.get_claim(&ns, &id).await {
+        Ok(Some(c)) => (StatusCode::OK, Json(c)).into_response(),
+        Ok(None) => (
+            StatusCode::NOT_FOUND,
+            Json(json!({"error": "claim not found"})),
+        )
+            .into_response(),
+        Err(e) => (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(json!({"error": e.to_string()})),
+        )
+            .into_response(),
+    }
+}
+
+async fn claim_proof(
+    State(app): State<AppState>,
+    Path((ns, id)): Path<(String, String)>,
+    headers: HeaderMap,
+) -> impl IntoResponse {
+    if let Err(resp) = enforce_caps(&headers, &ns, "admin") {
+        return resp.into_response();
+    }
+    match app.store.get_proof_by_claim(&ns, &id).await {
+        Ok(Some(p)) => (StatusCode::OK, Json(p)).into_response(),
+        Ok(None) => (
+            StatusCode::NOT_FOUND,
+            Json(json!({"error": "proof not found"})),
+        )
+            .into_response(),
+        Err(e) => (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(json!({"error": e.to_string()})),
+        )
+            .into_response(),
+    }
+}
+
+async fn claim_challenge(
+    State(app): State<AppState>,
+    Path((ns, id)): Path<(String, String)>,
+    headers: HeaderMap,
+    Json(req): Json<ChallengeRequest>,
+) -> impl IntoResponse {
+    if let Err(resp) = enforce_caps(&headers, &ns, "admin") {
+        return resp.into_response();
+    }
+    // Get the current proof to extract proof_id
+    let proof_id = match app.store.get_proof_by_claim(&ns, &id).await {
+        Ok(Some(p)) => p
+            .get("proof_id")
+            .and_then(|v| v.as_str())
+            .unwrap_or("")
+            .to_string(),
+        Ok(None) => {
+            return (
+                StatusCode::NOT_FOUND,
+                Json(json!({"error": "proof not found"})),
+            )
+                .into_response()
+        }
+        Err(e) => {
+            return (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(json!({"error": e.to_string()})),
+            )
+                .into_response()
+        }
+    };
+    let challenge = Challenge::new(id.clone(), proof_id, ns.clone(), req);
+    let challenge_json = serde_json::to_value(&challenge).unwrap();
+    match app
+        .store
+        .store_challenge(&ns, &id, challenge_json.clone())
+        .await
+    {
+        Ok(_) => (StatusCode::OK, Json(challenge_json)).into_response(),
+        Err(e) => (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(json!({"error": e.to_string()})),
+        )
+            .into_response(),
+    }
+}
+
+async fn list_domains(State(app): State<AppState>, headers: HeaderMap) -> impl IntoResponse {
+    if let Err(resp) = enforce_caps(&headers, "admin://global", "admin") {
+        return resp.into_response();
+    }
+    let domains: Vec<serde_json::Value> = app
+        .domains
+        .list()
+        .iter()
+        .map(|d| {
+            json!({
+                "domain": d.domain,
+                "version": d.version,
+                "description": d.description,
+                "templates": d.claim_templates.iter().map(|t| &t.id).collect::<Vec<_>>(),
+            })
+        })
+        .collect();
+    (StatusCode::OK, Json(domains)).into_response()
 }
 
 pub mod agentstate_v1 {
