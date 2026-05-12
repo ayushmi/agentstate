@@ -4,6 +4,7 @@ pub mod claim;
 pub mod domain;
 pub mod engine;
 pub mod proof;
+pub mod testing;
 
 pub use challenge::{Challenge, ChallengeRequest, ChallengeStatus};
 pub use claim::{Claim, ClaimAssertion, ClaimRequest, Consequence, PremiseRef};

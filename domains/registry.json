@@ -1,0 +1,86 @@
+{
+  "$schema": "https://agentstate.dev/schemas/domain-registry.json",
+  "registry_version": "1",
+  "updated_at": "2026-05-13T00:00:00Z",
+  "maintainer": "AgentState Community",
+  "domains": [
+    {
+      "id": "healthcare/v1",
+      "path": "domains/healthcare/v1/manifest.json",
+      "domain": "healthcare",
+      "version": "v1",
+      "status": "stable",
+      "description": "Formal axioms, inference rules, and claim templates for clinical decision support. Covers drug safety, prescribing, diagnostics, and lab results.",
+      "tags": ["clinical", "drug-safety", "diagnostics", "prescribing"],
+      "maintainer": "AgentState Core Team",
+      "contact": "https://github.com/agentstate-dev/agentstate/issues",
+      "license": "Apache-2.0",
+      "requires_review": false,
+      "templates": [
+        "drug_safety",
+        "diagnostic_certainty",
+        "lab_result_interpretation",
+        "prescribing_clearance"
+      ],
+      "regulated_by": ["EU AI Act Art. 6", "FDA 21 CFR Part 11", "HIPAA"]
+    },
+    {
+      "id": "finance/v1",
+      "path": "domains/finance/v1/manifest.json",
+      "domain": "finance",
+      "version": "v1",
+      "status": "stable",
+      "description": "Inference rules and templates for financial risk assessment, solvency checks, and contract validity.",
+      "tags": ["solvency", "credit-risk", "contract", "regulatory-capital"],
+      "maintainer": "AgentState Core Team",
+      "contact": "https://github.com/agentstate-dev/agentstate/issues",
+      "license": "Apache-2.0",
+      "requires_review": false,
+      "templates": [
+        "entity_solvency",
+        "credit_risk_assessment",
+        "contract_validity"
+      ],
+      "regulated_by": ["Basel III", "EU AI Act Art. 6", "MiFID II"]
+    },
+    {
+      "id": "legal/v1",
+      "path": "domains/legal/v1/manifest.json",
+      "domain": "legal",
+      "version": "v1",
+      "status": "stable",
+      "description": "Claim templates for contract interpretation, obligation tracking, and regulatory compliance.",
+      "tags": ["contract", "compliance", "obligation", "regulatory"],
+      "maintainer": "AgentState Core Team",
+      "contact": "https://github.com/agentstate-dev/agentstate/issues",
+      "license": "Apache-2.0",
+      "requires_review": false,
+      "templates": [
+        "contract_obligation_met",
+        "regulatory_compliance",
+        "jurisdiction_applicable"
+      ],
+      "regulated_by": ["EU AI Act Art. 13"]
+    },
+    {
+      "id": "tax/v1",
+      "path": "domains/tax/v1/manifest.json",
+      "domain": "tax",
+      "version": "v1",
+      "status": "stable",
+      "description": "Templates for tax liability assessment, withholding determination, and treaty applicability.",
+      "tags": ["tax-liability", "withholding", "treaty", "jurisdiction"],
+      "maintainer": "AgentState Core Team",
+      "contact": "https://github.com/agentstate-dev/agentstate/issues",
+      "license": "Apache-2.0",
+      "requires_review": false,
+      "templates": [
+        "tax_liability",
+        "withholding_obligation",
+        "treaty_benefit_applicable"
+      ],
+      "regulated_by": ["OECD BEPS", "IRC Section 1441"]
+    }
+  ],
+  "submission_guidelines": "See docs/domain-governance.md for how to propose a new domain pack."
+}

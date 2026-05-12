@@ -149,6 +149,16 @@ pub fn build_proof(claim: &Claim, domain: &DomainPack, existing_proofs: &[Proof]
     }
     .to_string();
 
+    // If required_signers are declared and there are no refutation reasons yet,
+    // start in Proving state until all signers co-sign.
+    let (status, confidence) = if !claim.required_signers.is_empty()
+        && status == ProofStatus::Proved
+    {
+        (ProofStatus::Proving, "pending_signatures".to_string())
+    } else {
+        (status, confidence)
+    };
+
     let mut proof = Proof {
         proof_id,
         claim_id: claim.id.clone(),
@@ -174,6 +184,8 @@ pub fn build_proof(claim: &Claim, domain: &DomainPack, existing_proofs: &[Proof]
         commit,
         prev_commit: None,
         commit_seq: 0,
+        valid_until: claim.valid_until,
+        required_signers: claim.required_signers.clone(),
     };
 
     proof.properties = checker::check_all(&proof, claim, existing_proofs, domain);

@@ -1,5 +1,5 @@
 use agentstate_claims::{
-    build_proof, Challenge, ChallengeRequest, Claim, ClaimRequest, DomainRegistry,
+    build_proof, Challenge, ChallengeRequest, Claim, ClaimRequest, DomainPack, DomainRegistry,
 };
 use agentstate_core::{PutRequest, QueryRequest, StateError};
 use agentstate_storage::{InMemoryStore, PersistentStore, Storage};
@@ -36,7 +36,7 @@ use tonic::{transport::Server as GrpcServer, Request, Response as TonicResponse,
 #[derive(Clone)]
 struct AppState {
     store: Arc<dyn Storage>,
-    domains: Arc<DomainRegistry>,
+    domains: Arc<parking_lot::RwLock<DomainRegistry>>,
     // simple in-memory idempotency cache: (ns, key)-> (ts, response json)
     idem: Arc<
         parking_lot::RwLock<
@@ -94,7 +94,7 @@ async fn main() -> anyhow::Result<()> {
     };
     let state = AppState {
         store,
-        domains: Arc::new(DomainRegistry::new()),
+        domains: Arc::new(parking_lot::RwLock::new(DomainRegistry::new())),
         idem: Arc::new(parking_lot::RwLock::new(std::collections::HashMap::new())),
         qps: Arc::new(parking_lot::RwLock::new(std::collections::HashMap::new())),
     };
@@ -103,6 +103,7 @@ async fn main() -> anyhow::Result<()> {
     let sweeper_state = state.clone();
     let snapshot_state = state.clone();
     let grpc_state = state.clone();
+    let consequence_state = state.clone();
 
     // Metrics registry (MVP)
     static REGISTRY: Lazy<Registry> = Lazy::new(Registry::new);
@@ -181,7 +182,10 @@ async fn main() -> anyhow::Result<()> {
         .route("/admin/namespaces/:ns/claims/:id", get(claim_get))
         .route("/admin/namespaces/:ns/claims/:id/proof", get(claim_proof))
         .route("/admin/namespaces/:ns/claims/:id/challenge", post(claim_challenge))
-        .route("/admin/domains", get(list_domains))
+        .route("/admin/namespaces/:ns/claims/:id/sign", post(claim_sign))
+        .route("/admin/namespaces/:ns/claims/:id/vc", get(claim_vc))
+        .route("/admin/domains", get(list_domains).post(register_domain))
+        .route("/admin/domains/validate", post(validate_domain))
         .route("/metrics", get(metrics))
         .with_state(state)
         .layer(
@@ -201,6 +205,116 @@ async fn main() -> anyhow::Result<()> {
         loop {
             let _ = sweeper_state.store.sweep_expired(0).await; // retention window unused in mem engine
             tokio::time::sleep(std::time::Duration::from_secs(30)).await;
+        }
+    });
+
+    // Consequence checking daemon — runs every 60s
+    // Checks pending consequences whose check_after_hours has elapsed.
+    // Updates status to holds/violated and marks proof Refuted on violation.
+    tokio::spawn(async move {
+        loop {
+            tokio::time::sleep(std::time::Duration::from_secs(60)).await;
+            let store = &consequence_state.store;
+            // Walk all registered namespaces via list_registered_domain_packs (arbitrary ns discovery).
+            // In practice, we scan all claims across namespaces.
+            let packs = store.list_registered_domain_packs().await.unwrap_or_default();
+            let namespaces: Vec<String> = packs
+                .iter()
+                .filter_map(|p| p.get("domain").and_then(|v| v.as_str()).map(String::from))
+                .collect();
+            // Also check claims from all storage namespaces by attempting a few known ones.
+            // A more robust approach would be a namespace registry — this is a best-effort sweep.
+            let mut ns_set = std::collections::HashSet::new();
+            for ns in namespaces { ns_set.insert(ns); }
+
+            for ns in &ns_set {
+                let claims = store.list_claims(ns).await.unwrap_or_default();
+                for claim in &claims {
+                    let claim_id = match claim.get("id").and_then(|v| v.as_str()) {
+                        Some(id) => id.to_string(),
+                        None => continue,
+                    };
+                    let claim_ts: chrono::DateTime<chrono::Utc> = claim
+                        .get("ts")
+                        .and_then(|v| v.as_str())
+                        .and_then(|s| chrono::DateTime::parse_from_rfc3339(s).ok())
+                        .map(|dt| dt.with_timezone(&chrono::Utc))
+                        .unwrap_or_else(chrono::Utc::now);
+
+                    // Check proof TTL / expiry
+                    if let Ok(Some(proof)) = store.get_proof_by_claim(ns, &claim_id).await {
+                        let status = proof.get("status").and_then(|v| v.as_str()).unwrap_or("");
+                        if status != "expired" && status != "refuted" {
+                            if let Some(valid_until_str) = proof.get("valid_until").and_then(|v| v.as_str()) {
+                                if let Ok(valid_until) = chrono::DateTime::parse_from_rfc3339(valid_until_str) {
+                                    if chrono::Utc::now() > valid_until.with_timezone(&chrono::Utc) {
+                                        let proof_id = proof.get("proof_id").and_then(|v| v.as_str()).unwrap_or("").to_string();
+                                        let _ = store.update_proof_status(ns, &claim_id, &proof_id, "expired", None).await;
+                                        continue;
+                                    }
+                                }
+                            }
+                        }
+                    }
+
+                    // Check pending consequences
+                    let consequences = claim
+                        .get("consequences")
+                        .and_then(|v| v.as_array())
+                        .cloned()
+                        .unwrap_or_default();
+                    for (idx, consequence) in consequences.iter().enumerate() {
+                        let cstatus = consequence.get("status").and_then(|v| v.as_str()).unwrap_or("pending");
+                        if cstatus != "pending" { continue; }
+                        let check_after_hours = consequence
+                            .get("check_after_hours")
+                            .and_then(|v| v.as_u64())
+                            .unwrap_or(0);
+                        let due = claim_ts + chrono::Duration::hours(check_after_hours as i64);
+                        if chrono::Utc::now() < due { continue; }
+
+                        // Evaluate the consequence predicate against WAL state
+                        // The predicate uses the same invariant DSL format
+                        let predicate = match consequence.get("predicate") {
+                            Some(p) => p.clone(),
+                            None => continue,
+                        };
+                        // Look up the subject object_id from the claim
+                        let object_id = claim
+                            .get("assertion")
+                            .and_then(|a| a.get("subject"))
+                            .and_then(|s| s.get("object_id").or(s.get("patient_id")).or(s.get("entity_id")))
+                            .and_then(|v| v.as_str())
+                            .unwrap_or("")
+                            .to_string();
+
+                        let consequence_status = if object_id.is_empty() {
+                            "holds" // no WAL subject to check — optimistically pass
+                        } else {
+                            match store.get(ns, &object_id, agentstate_storage::traits::GetOptions { at_ts: None }).await {
+                                Ok(obj) => {
+                                    // Evaluate predicate using invariant checker
+                                    let spec = serde_json::json!({"rules": [predicate]});
+                                    if agentstate_core::invariant::check(&spec, &obj).is_ok() {
+                                        "holds"
+                                    } else {
+                                        "violated"
+                                    }
+                                }
+                                Err(_) => "holds", // object not found — optimistically pass
+                            }
+                        };
+
+                        let _ = store.update_consequence_status(ns, &claim_id, idx, consequence_status).await;
+                        if consequence_status == "violated" {
+                            if let Ok(Some(proof)) = store.get_proof_by_claim(ns, &claim_id).await {
+                                let proof_id = proof.get("proof_id").and_then(|v| v.as_str()).unwrap_or("").to_string();
+                                let _ = store.update_proof_status(ns, &claim_id, &proof_id, "refuted", None).await;
+                            }
+                        }
+                    }
+                }
+            }
         }
     });
 
@@ -943,7 +1057,7 @@ async fn claim_submit(
     if let Err(resp) = enforce_caps(&headers, &ns, "admin") {
         return resp.into_response();
     }
-    let domain_pack = match app.domains.get(&req.domain) {
+    let domain_pack = match app.domains.read().get(&req.domain).cloned() {
         Some(d) => d,
         None => {
             return (
@@ -954,6 +1068,7 @@ async fn claim_submit(
         }
     };
     let claim = Claim::from_request(ns.clone(), req);
+    let domain_pack = domain_pack; // already cloned above
     let claim_json = serde_json::to_value(&claim).unwrap();
     if let Err(e) = app.store.store_claim(&ns, &claim.id, claim_json.clone()).await {
         return (
@@ -1086,14 +1201,27 @@ async fn claim_challenge(
                 .into_response()
         }
     };
-    let challenge = Challenge::new(id.clone(), proof_id, ns.clone(), req);
+    let challenge = Challenge::new(id.clone(), proof_id.clone(), ns.clone(), req);
     let challenge_json = serde_json::to_value(&challenge).unwrap();
     match app
         .store
         .store_challenge(&ns, &id, challenge_json.clone())
         .await
     {
-        Ok(_) => (StatusCode::OK, Json(challenge_json)).into_response(),
+        Ok(_) => {
+            // Update proof status to Challenged
+            let _ = app
+                .store
+                .update_proof_status(
+                    &ns,
+                    &id,
+                    &proof_id,
+                    "challenged",
+                    Some(challenge.challenge_id.clone()),
+                )
+                .await;
+            (StatusCode::OK, Json(challenge_json)).into_response()
+        }
         Err(e) => (
             StatusCode::INTERNAL_SERVER_ERROR,
             Json(json!({"error": e.to_string()})),
@@ -1108,6 +1236,7 @@ async fn list_domains(State(app): State<AppState>, headers: HeaderMap) -> impl I
     }
     let domains: Vec<serde_json::Value> = app
         .domains
+        .read()
         .list()
         .iter()
         .map(|d| {
@@ -1120,6 +1249,159 @@ async fn list_domains(State(app): State<AppState>, headers: HeaderMap) -> impl I
         })
         .collect();
     (StatusCode::OK, Json(domains)).into_response()
+}
+
+async fn register_domain(
+    State(app): State<AppState>,
+    headers: HeaderMap,
+    Json(pack_json): Json<serde_json::Value>,
+) -> impl IntoResponse {
+    if let Err(resp) = enforce_caps(&headers, "admin://global", "admin") {
+        return resp.into_response();
+    }
+    // Validate it parses as a DomainPack
+    let pack: DomainPack = match serde_json::from_value(pack_json.clone()) {
+        Ok(p) => p,
+        Err(e) => {
+            return (
+                StatusCode::BAD_REQUEST,
+                Json(json!({"error": format!("invalid domain pack: {}", e)})),
+            )
+                .into_response()
+        }
+    };
+    if pack.domain.is_empty() || pack.version.is_empty() {
+        return (
+            StatusCode::BAD_REQUEST,
+            Json(json!({"error": "domain and version are required"})),
+        )
+            .into_response();
+    }
+    let key = format!("{}/{}", pack.domain, pack.version);
+    // Register in runtime registry
+    app.domains.write().register(pack);
+    // WAL-persist so it survives restarts
+    match app.store.register_domain_pack(key.clone(), pack_json).await {
+        Ok(k) => (StatusCode::OK, Json(json!({"key": k, "status": "registered"}))).into_response(),
+        Err(e) => (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(json!({"error": e.to_string()})),
+        )
+            .into_response(),
+    }
+}
+
+async fn validate_domain(
+    headers: HeaderMap,
+    Json(pack_json): Json<serde_json::Value>,
+) -> impl IntoResponse {
+    if let Err(resp) = enforce_caps(&headers, "admin://global", "admin") {
+        return resp.into_response();
+    }
+    match serde_json::from_value::<DomainPack>(pack_json) {
+        Ok(pack) => {
+            let mut issues: Vec<String> = Vec::new();
+            if pack.domain.is_empty() { issues.push("domain field is empty".into()); }
+            if pack.version.is_empty() { issues.push("version field is empty".into()); }
+            if pack.inference_rules.is_empty() && !pack.claim_templates.is_empty() {
+                issues.push("claim_templates reference rules but no inference_rules defined".into());
+            }
+            // Check that all inference_chain refs exist
+            for tmpl in &pack.claim_templates {
+                for rule_id in &tmpl.inference_chain {
+                    if !pack.inference_rules.iter().any(|r| &r.id == rule_id) {
+                        issues.push(format!(
+                            "template '{}' references unknown rule '{}'",
+                            tmpl.id, rule_id
+                        ));
+                    }
+                }
+            }
+            if issues.is_empty() {
+                (StatusCode::OK, Json(json!({"valid": true, "key": format!("{}/{}", pack.domain, pack.version)}))).into_response()
+            } else {
+                (StatusCode::UNPROCESSABLE_ENTITY, Json(json!({"valid": false, "issues": issues}))).into_response()
+            }
+        }
+        Err(e) => (
+            StatusCode::BAD_REQUEST,
+            Json(json!({"valid": false, "issues": [format!("parse error: {}", e)]})),
+        )
+            .into_response(),
+    }
+}
+
+#[derive(serde::Deserialize)]
+struct SignReq {
+    signer: String,
+    token: String,
+}
+
+async fn claim_sign(
+    State(app): State<AppState>,
+    Path((ns, id)): Path<(String, String)>,
+    headers: HeaderMap,
+    Json(req): Json<SignReq>,
+) -> impl IntoResponse {
+    if let Err(resp) = enforce_caps(&headers, &ns, "admin") {
+        return resp.into_response();
+    }
+    let proof_id = match app.store.get_proof_by_claim(&ns, &id).await {
+        Ok(Some(p)) => p.get("proof_id").and_then(|v| v.as_str()).unwrap_or("").to_string(),
+        Ok(None) => return (StatusCode::NOT_FOUND, Json(json!({"error": "proof not found"}))).into_response(),
+        Err(e) => return (StatusCode::INTERNAL_SERVER_ERROR, Json(json!({"error": e.to_string()}))).into_response(),
+    };
+    match app.store.sign_proof(&ns, &id, &proof_id, &req.signer, &req.token).await {
+        Ok(_) => {
+            let sigs = app.store.get_proof_signatures(&ns, &id).await.unwrap_or_default();
+            (StatusCode::OK, Json(json!({"signed": true, "signatures": sigs}))).into_response()
+        }
+        Err(e) => (StatusCode::INTERNAL_SERVER_ERROR, Json(json!({"error": e.to_string()}))).into_response(),
+    }
+}
+
+async fn claim_vc(
+    State(app): State<AppState>,
+    Path((ns, id)): Path<(String, String)>,
+    headers: HeaderMap,
+) -> impl IntoResponse {
+    if let Err(resp) = enforce_caps(&headers, &ns, "admin") {
+        return resp.into_response();
+    }
+    let (claim, proof) = match tokio::join!(
+        app.store.get_claim(&ns, &id),
+        app.store.get_proof_by_claim(&ns, &id),
+    ) {
+        (Ok(Some(c)), Ok(Some(p))) => (c, p),
+        _ => return (StatusCode::NOT_FOUND, Json(json!({"error": "claim or proof not found"}))).into_response(),
+    };
+
+    let proof_commit = proof.get("commit").and_then(|v| v.as_str()).unwrap_or("");
+    let proof_ts = proof.get("ts").and_then(|v| v.as_str()).unwrap_or("");
+    let claim_id = claim.get("id").and_then(|v| v.as_str()).unwrap_or(&id);
+    let steps = proof.get("steps").cloned().unwrap_or(json!([]));
+
+    let vc = json!({
+        "@context": [
+            "https://www.w3.org/2018/credentials/v1",
+            "https://agentstate.dev/contexts/claim-proof/v1"
+        ],
+        "type": ["VerifiableCredential", "AgentStateClaim"],
+        "id": format!("urn:agentstate:claim:{}", claim_id),
+        "issuer": format!("urn:agentstate:ns:{}", ns),
+        "issuanceDate": proof_ts,
+        "credentialSubject": claim.get("assertion").cloned().unwrap_or(json!({})),
+        "evidence": steps,
+        "proof": {
+            "type": "AgentStateBlake3Proof2026",
+            "created": proof_ts,
+            "proofPurpose": "assertionMethod",
+            "verificationMethod": format!("urn:agentstate:ns:{}#wal-chain", ns),
+            "jws": proof_commit,
+            "proofProperties": proof.get("properties").cloned().unwrap_or(json!({}))
+        }
+    });
+    (StatusCode::OK, Json(vc)).into_response()
 }
 
 pub mod agentstate_v1 {

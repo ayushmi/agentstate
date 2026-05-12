@@ -93,4 +93,10 @@ pub struct Proof {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub prev_commit: Option<String>,
     pub commit_seq: u64,
+    /// Optional expiry time — status becomes "expired" after this timestamp.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub valid_until: Option<DateTime<Utc>>,
+    /// Signers required before status advances from Proving to Proved.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub required_signers: Vec<String>,
 }

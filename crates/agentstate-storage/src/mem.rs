@@ -42,6 +42,10 @@ struct Inner {
     claim_proof_map: HashMap<(String, String), String>,        // (ns, claim_id) -> proof_id
     ns_claims: HashMap<String, Vec<String>>,                   // ns -> [claim_ids]
     challenge_store: HashMap<String, Vec<serde_json::Value>>,  // claim_id -> [Challenge JSON]
+    // Runtime-registered domain packs: key -> pack JSON
+    domain_packs: HashMap<String, serde_json::Value>,
+    // Proof signatures: (ns, claim_id) -> [SignatureRecord JSON]
+    proof_signatures: HashMap<(String, String), Vec<serde_json::Value>>,
 }
 
 #[derive(Clone, Default)]
@@ -286,6 +290,136 @@ impl InMemoryStore {
         inner
             .challenge_store
             .get(claim_id)
+            .cloned()
+            .unwrap_or_default()
+    }
+
+    // ── Domain pack runtime registration ─────────────────────────────────────
+
+    pub fn register_domain_pack_mem(&self, key: String, pack: serde_json::Value) {
+        let mut inner = self.inner.write();
+        inner.domain_packs.insert(key, pack);
+    }
+
+    pub fn list_registered_domain_packs_mem(&self) -> Vec<serde_json::Value> {
+        let inner = self.inner.read();
+        inner.domain_packs.values().cloned().collect()
+    }
+
+    // ── Proof status updates ─────────────────────────────────────────────────
+
+    pub fn update_proof_status_mem(
+        &self,
+        ns: &str,
+        claim_id: &str,
+        _proof_id: &str,
+        status: &str,
+        challenge_id: Option<String>,
+    ) {
+        let mut inner = self.inner.write();
+        let key = (ns.to_string(), claim_id.to_string());
+        if let Some(proof_id) = inner.claim_proof_map.get(&key).cloned() {
+            if let Some(proof) = inner.proof_store.get_mut(&proof_id) {
+                if let Some(obj) = proof.as_object_mut() {
+                    obj.insert("status".to_string(), serde_json::json!(status));
+                    if let Some(cid) = challenge_id {
+                        let challenges = obj
+                            .entry("challenges".to_string())
+                            .or_insert_with(|| serde_json::json!([]));
+                        if let Some(arr) = challenges.as_array_mut() {
+                            arr.push(serde_json::json!(cid));
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    // ── Consequence status updates ────────────────────────────────────────────
+
+    pub fn update_consequence_status_mem(&self, ns: &str, claim_id: &str, idx: usize, status: &str) {
+        let mut inner = self.inner.write();
+        // Update in claim
+        let claim_key = (ns.to_string(), claim_id.to_string());
+        if let Some(claim) = inner.claim_store.get_mut(&claim_key) {
+            if let Some(consequences) = claim
+                .get_mut("consequences")
+                .and_then(|c| c.as_array_mut())
+            {
+                if let Some(c) = consequences.get_mut(idx) {
+                    if let Some(obj) = c.as_object_mut() {
+                        obj.insert("status".to_string(), serde_json::json!(status));
+                    }
+                }
+            }
+        }
+        // Also update in proof's consequences_checked
+        if let Some(proof_id) = inner.claim_proof_map.get(&claim_key).cloned() {
+            if let Some(proof) = inner.proof_store.get_mut(&proof_id) {
+                if let Some(checked) = proof
+                    .get_mut("consequences_checked")
+                    .and_then(|c| c.as_array_mut())
+                {
+                    if let Some(c) = checked.get_mut(idx) {
+                        if let Some(obj) = c.as_object_mut() {
+                            obj.insert("status".to_string(), serde_json::json!(status));
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    // ── Proof signatures ─────────────────────────────────────────────────────
+
+    pub fn sign_proof_mem(&self, ns: &str, claim_id: &str, signer: &str, token: &str, proof_id: &str) {
+        let mut inner = self.inner.write();
+        let key = (ns.to_string(), claim_id.to_string());
+        let sig = serde_json::json!({
+            "signer": signer,
+            "token": token,
+            "proof_id": proof_id,
+            "ts": chrono::Utc::now().to_rfc3339(),
+        });
+        inner.proof_signatures.entry(key).or_default().push(sig);
+
+        // If all required signers have signed, update proof status to proved
+        let proof_id_owned = inner.claim_proof_map.get(&(ns.to_string(), claim_id.to_string())).cloned();
+        if let Some(pid) = proof_id_owned {
+            if let Some(proof) = inner.proof_store.get(&pid).cloned() {
+                let required: Vec<String> = proof
+                    .get("required_signers")
+                    .and_then(|v| v.as_array())
+                    .map(|a| a.iter().filter_map(|v| v.as_str().map(String::from)).collect())
+                    .unwrap_or_default();
+                if !required.is_empty() {
+                    let signed: Vec<String> = inner
+                        .proof_signatures
+                        .get(&(ns.to_string(), claim_id.to_string()))
+                        .map(|sigs| {
+                            sigs.iter()
+                                .filter_map(|s| s.get("signer").and_then(|v| v.as_str()).map(String::from))
+                                .collect()
+                        })
+                        .unwrap_or_default();
+                    let all_signed = required.iter().all(|r| signed.contains(r));
+                    if all_signed {
+                        if let Some(p) = inner.proof_store.get_mut(&pid) {
+                            if let Some(obj) = p.as_object_mut() {
+                                obj.insert("status".to_string(), serde_json::json!("proved"));
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    pub fn get_proof_signatures_mem(&self, ns: &str, claim_id: &str) -> Vec<serde_json::Value> {
+        let inner = self.inner.read();
+        inner
+            .proof_signatures
+            .get(&(ns.to_string(), claim_id.to_string()))
             .cloned()
             .unwrap_or_default()
     }
@@ -848,6 +982,58 @@ impl Storage for InMemoryStore {
         ns: &str,
     ) -> agentstate_core::Result<Vec<serde_json::Value>> {
         Ok(self.get_proofs_for_ns_mem(ns))
+    }
+
+    async fn register_domain_pack(&self, key: String, pack: serde_json::Value) -> agentstate_core::Result<String> {
+        self.register_domain_pack_mem(key.clone(), pack);
+        Ok(key)
+    }
+
+    async fn list_registered_domain_packs(&self) -> agentstate_core::Result<Vec<serde_json::Value>> {
+        Ok(self.list_registered_domain_packs_mem())
+    }
+
+    async fn update_proof_status(
+        &self,
+        ns: &str,
+        claim_id: &str,
+        proof_id: &str,
+        status: &str,
+        challenge_id: Option<String>,
+    ) -> agentstate_core::Result<()> {
+        self.update_proof_status_mem(ns, claim_id, proof_id, status, challenge_id);
+        Ok(())
+    }
+
+    async fn update_consequence_status(
+        &self,
+        ns: &str,
+        claim_id: &str,
+        idx: usize,
+        status: &str,
+    ) -> agentstate_core::Result<()> {
+        self.update_consequence_status_mem(ns, claim_id, idx, status);
+        Ok(())
+    }
+
+    async fn sign_proof(
+        &self,
+        ns: &str,
+        claim_id: &str,
+        proof_id: &str,
+        signer: &str,
+        token: &str,
+    ) -> agentstate_core::Result<()> {
+        self.sign_proof_mem(ns, claim_id, signer, token, proof_id);
+        Ok(())
+    }
+
+    async fn get_proof_signatures(
+        &self,
+        ns: &str,
+        claim_id: &str,
+    ) -> agentstate_core::Result<Vec<serde_json::Value>> {
+        Ok(self.get_proof_signatures_mem(ns, claim_id))
     }
 }
 

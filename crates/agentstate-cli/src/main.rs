@@ -1,3 +1,4 @@
+use agentstate_claims::{build_proof, Claim, ClaimRequest, DomainPack, DomainRegistry};
 use agentstate_storage::walbin;
 use agentstate_verify;
 use anyhow::Result;
@@ -69,6 +70,63 @@ enum ClaimCmd {
         #[arg(long)]
         counter: Vec<String>,
     },
+    /// Print a human-readable explanation of a claim's proof.
+    Explain {
+        /// Server base URL
+        #[arg(long, default_value = "http://localhost:8080")]
+        server: String,
+        /// Namespace
+        #[arg(long, short = 'n')]
+        ns: String,
+        /// Claim ID
+        id: String,
+    },
+    /// Export a claim's proof as a W3C Verifiable Credential.
+    Vc {
+        /// Server base URL
+        #[arg(long, default_value = "http://localhost:8080")]
+        server: String,
+        /// Namespace
+        #[arg(long, short = 'n')]
+        ns: String,
+        /// Claim ID
+        id: String,
+    },
+}
+
+#[derive(Subcommand)]
+enum DomainCmd {
+    /// List all available domain packs (built-in + registered).
+    List {
+        /// Server base URL
+        #[arg(long, default_value = "http://localhost:8080")]
+        server: String,
+    },
+    /// Validate a domain pack JSON file for structural correctness.
+    Validate {
+        /// Path to domain pack JSON file
+        file: String,
+    },
+    /// Test a domain pack locally: run a sample claim through the proof engine and print the result.
+    Test {
+        /// Path to domain pack JSON file
+        #[arg(long, short = 'd')]
+        domain: String,
+        /// Path to claim request JSON file
+        #[arg(long, short = 'c')]
+        claim: String,
+        /// Namespace to use for the test (arbitrary)
+        #[arg(long, short = 'n', default_value = "test")]
+        ns: String,
+    },
+    /// Register a domain pack with the running server (persisted to WAL).
+    Register {
+        /// Server base URL
+        #[arg(long, default_value = "http://localhost:8080")]
+        server: String,
+        /// Path to domain pack JSON file
+        file: String,
+    },
 }
 
 #[derive(Parser)]
@@ -109,12 +167,9 @@ enum Cmd {
     /// Submit a claim for verification and retrieve the formal proof.
     #[command(subcommand)]
     Claim(ClaimCmd),
-    /// List built-in and registered domain packs.
-    Domain {
-        /// Server base URL
-        #[arg(long, default_value = "http://localhost:8080")]
-        server: String,
-    },
+    /// Domain pack management: list, validate, test, and register domain packs.
+    #[command(subcommand)]
+    Domain(DomainCmd),
     /// Show the full state history of a single object, with field-level diffs between versions.
     Replay {
         /// Object ID to trace through the WAL
@@ -129,6 +184,72 @@ enum Cmd {
         #[arg(long, short = 's')]
         snapshot: Option<String>,
     },
+}
+
+/// Render a proof JSON as human-readable explanation.
+fn explain_proof(proof: &serde_json::Value) {
+    let status = proof.get("status").and_then(|v| v.as_str()).unwrap_or("unknown");
+    let proof_id = proof.get("proof_id").and_then(|v| v.as_str()).unwrap_or("?");
+    let domain = proof.get("domain").and_then(|v| v.as_str()).unwrap_or("?");
+    let confidence = proof.get("confidence").and_then(|v| v.as_str()).unwrap_or("?");
+    let conclusion = proof.get("conclusion").cloned().unwrap_or_default();
+    let predicate = conclusion.get("predicate").and_then(|v| v.as_str()).unwrap_or("?");
+
+    println!("Proof {}", proof_id);
+    println!("  Status:     {}", status.to_uppercase());
+    println!("  Confidence: {}", confidence);
+    println!("  Domain:     {}", domain);
+    println!("  Conclusion: {}", predicate);
+
+    if let Some(reason) = proof.get("refutation_reason").and_then(|v| v.as_str()) {
+        println!("  Refuted:    {}", reason);
+    }
+
+    let props = proof.get("properties");
+    println!("\nFormal Properties:");
+    for (label, key) in &[
+        ("Self-consistent", "self_consistent"),
+        ("Minimal",         "minimal"),
+        ("Predictive",      "has_predictive_constraint"),
+        ("Verifiable",      "verifiable"),
+        ("Sound",           "sound"),
+        ("Monotonic",       "monotonic"),
+    ] {
+        let val = props
+            .and_then(|p| p.get(*key))
+            .and_then(|v| v.as_bool())
+            .unwrap_or(false);
+        println!("  {:20} {}", label, if val { "✓" } else { "✗" });
+    }
+
+    if let Some(steps) = proof.get("steps").and_then(|v| v.as_array()) {
+        println!("\nProof DAG ({} step(s)):", steps.len());
+        for step in steps {
+            let kind = step.get("kind").and_then(|v| v.as_str()).unwrap_or("?");
+            let rule = step.get("rule").and_then(|v| v.as_str()).unwrap_or("?");
+            let desc = step.get("conclusion_desc").and_then(|v| v.as_str()).unwrap_or("");
+            let step_id = step.get("step_id").and_then(|v| v.as_u64()).unwrap_or(0);
+            println!("  [{}] {:12} {} — {}", step_id, kind.to_uppercase(), rule, desc);
+        }
+    }
+
+    if let Some(assumptions) = proof.get("assumptions").and_then(|v| v.as_array()) {
+        println!("\nAssumptions ({}):", assumptions.len());
+        for a in assumptions {
+            println!("  • {}", a.as_str().unwrap_or("?"));
+        }
+    }
+
+    if let Some(consequences) = proof.get("consequences_checked").and_then(|v| v.as_array()) {
+        if !consequences.is_empty() {
+            println!("\nConsequences:");
+            for c in consequences {
+                let pred = c.get("predicate_desc").and_then(|v| v.as_str()).unwrap_or("?");
+                let status = c.get("status").and_then(|v| v.as_str()).unwrap_or("pending");
+                println!("  {:8} {}", status.to_uppercase(), pred);
+            }
+        }
+    }
 }
 
 fn read_snapshot(path: &str) -> Result<Vec<serde_json::Value>> {
@@ -210,15 +331,66 @@ fn main() -> Result<()> {
                 std::process::exit(1);
             }
         }
-        Cmd::Domain { server } => {
-            let client = Client::new();
-            let resp = client
-                .get(format!("{}/admin/domains", server))
-                .send()?
-                .error_for_status()?;
-            let body: serde_json::Value = resp.json()?;
-            println!("{}", serde_json::to_string_pretty(&body)?);
-        }
+        Cmd::Domain(domain_cmd) => match domain_cmd {
+            DomainCmd::List { server } => {
+                let resp = Client::new()
+                    .get(format!("{}/admin/domains", server))
+                    .send()?
+                    .error_for_status()?;
+                let body: serde_json::Value = resp.json()?;
+                println!("{}", serde_json::to_string_pretty(&body)?);
+            }
+            DomainCmd::Validate { file } => {
+                let raw = std::fs::read_to_string(&file)?;
+                let pack: DomainPack = serde_json::from_str(&raw).map_err(|e| {
+                    anyhow::anyhow!("Invalid domain pack JSON: {}", e)
+                })?;
+                // Check all inference_chain rules exist
+                let mut errors: Vec<String> = Vec::new();
+                for tmpl in &pack.claim_templates {
+                    for rule_id in &tmpl.inference_chain {
+                        if !pack.inference_rules.iter().any(|r| &r.id == rule_id) {
+                            errors.push(format!(
+                                "template '{}': inference_chain references unknown rule '{}'",
+                                tmpl.id, rule_id
+                            ));
+                        }
+                    }
+                }
+                if errors.is_empty() {
+                    println!("✓ Domain pack '{}' v{} is valid", pack.domain, pack.version);
+                    println!("  Templates: {}", pack.claim_templates.len());
+                    println!("  Inference rules: {}", pack.inference_rules.len());
+                    println!("  Axioms: {}", pack.axioms.len());
+                } else {
+                    eprintln!("Domain pack validation failed:");
+                    for e in &errors {
+                        eprintln!("  - {}", e);
+                    }
+                    std::process::exit(1);
+                }
+            }
+            DomainCmd::Test { domain, claim, ns } => {
+                let pack: DomainPack = serde_json::from_str(&std::fs::read_to_string(&domain)?)?;
+                let req: ClaimRequest = serde_json::from_str(&std::fs::read_to_string(&claim)?)?;
+                let stored_claim = req.into_claim(ns);
+                let mut registry = DomainRegistry::new();
+                registry.register(pack.clone());
+                let proof = build_proof(&stored_claim, &pack, &[]);
+                println!("{}", serde_json::to_string_pretty(&proof)?);
+            }
+            DomainCmd::Register { server, file } => {
+                let raw = std::fs::read_to_string(&file)?;
+                let body: serde_json::Value = serde_json::from_str(&raw)?;
+                let resp = Client::new()
+                    .post(format!("{}/admin/domains", server))
+                    .json(&body)
+                    .send()?
+                    .error_for_status()?;
+                let out: serde_json::Value = resp.json()?;
+                println!("{}", serde_json::to_string_pretty(&out)?);
+            }
+        },
         Cmd::Claim(claim_cmd) => match claim_cmd {
             ClaimCmd::Submit { server, ns, file } => {
                 let body: serde_json::Value =
@@ -278,6 +450,28 @@ fn main() -> Result<()> {
                     .send()?
                     .error_for_status()?;
                 println!("{}", serde_json::to_string_pretty(&resp.json::<serde_json::Value>()?)?);
+            }
+            ClaimCmd::Explain { server, ns, id } => {
+                let proof: serde_json::Value = Client::new()
+                    .get(format!(
+                        "{}/admin/namespaces/{}/claims/{}/proof",
+                        server, ns, id
+                    ))
+                    .send()?
+                    .error_for_status()?
+                    .json()?;
+                explain_proof(&proof);
+            }
+            ClaimCmd::Vc { server, ns, id } => {
+                let vc: serde_json::Value = Client::new()
+                    .get(format!(
+                        "{}/admin/namespaces/{}/claims/{}/vc",
+                        server, ns, id
+                    ))
+                    .send()?
+                    .error_for_status()?
+                    .json()?;
+                println!("{}", serde_json::to_string_pretty(&vc)?);
             }
         },
         Cmd::Replay {

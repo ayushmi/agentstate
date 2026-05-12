@@ -153,6 +153,56 @@ pub trait Storage: Send + Sync + 'static {
     async fn get_proofs_for_ns(&self, _ns: &str) -> Result<Vec<serde_json::Value>> {
         Ok(vec![])
     }
+
+    // Domain pack runtime registration
+    async fn register_domain_pack(&self, _key: String, _pack: serde_json::Value) -> Result<String> {
+        Err(agentstate_core::StateError::Internal("not supported".into()))
+    }
+    async fn list_registered_domain_packs(&self) -> Result<Vec<serde_json::Value>> {
+        Ok(vec![])
+    }
+
+    // Proof status updates (challenge feedback, expiry, consequence violation)
+    async fn update_proof_status(
+        &self,
+        _ns: &str,
+        _claim_id: &str,
+        _proof_id: &str,
+        _status: &str,
+        _challenge_id: Option<String>,
+    ) -> Result<()> {
+        Ok(())
+    }
+
+    // Consequence status updates
+    async fn update_consequence_status(
+        &self,
+        _ns: &str,
+        _claim_id: &str,
+        _idx: usize,
+        _status: &str,
+    ) -> Result<()> {
+        Ok(())
+    }
+
+    // Multi-party signing
+    async fn sign_proof(
+        &self,
+        _ns: &str,
+        _claim_id: &str,
+        _proof_id: &str,
+        _signer: &str,
+        _token: &str,
+    ) -> Result<()> {
+        Ok(())
+    }
+    async fn get_proof_signatures(
+        &self,
+        _ns: &str,
+        _claim_id: &str,
+    ) -> Result<Vec<serde_json::Value>> {
+        Ok(vec![])
+    }
 }
 
 pub trait WatchHandle: Send {

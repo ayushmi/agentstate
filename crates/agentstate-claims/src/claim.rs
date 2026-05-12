@@ -122,6 +122,12 @@ pub struct ClaimRequest {
     pub scope: Option<ClaimScope>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub cause: Option<Cause>,
+    /// Optional validity window — proof is considered expired after this time.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub valid_until: Option<DateTime<Utc>>,
+    /// Signers required before the proof status advances to `proved`.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub required_signers: Vec<String>,
 }
 
 impl ClaimRequest {
@@ -151,6 +157,10 @@ pub struct Claim {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub prev_commit: Option<String>,
     pub commit_seq: u64,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub valid_until: Option<DateTime<Utc>>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub required_signers: Vec<String>,
 }
 
 impl Claim {
@@ -173,6 +183,8 @@ impl Claim {
             commit,
             prev_commit: None,
             commit_seq: 0,
+            valid_until: req.valid_until,
+            required_signers: req.required_signers,
         }
     }
 }

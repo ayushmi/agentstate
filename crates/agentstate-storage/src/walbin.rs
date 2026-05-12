@@ -30,6 +30,10 @@ pub enum RecType {
     ProofStore = 9,
     ClaimRetract = 10,
     ChallengeRecord = 11,
+    DomainRegister = 12,
+    ConsequenceUpdate = 13,
+    ProofStatusUpdate = 14,
+    ProofSign = 15,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -91,6 +95,30 @@ pub enum RecBody {
         ns: String,
         claim_id: String,
         challenge: serde_json::Value,
+    },
+    DomainRegister {
+        key: String,
+        pack: serde_json::Value,
+    },
+    ConsequenceUpdate {
+        ns: String,
+        claim_id: String,
+        idx: usize,
+        status: String, // "holds" | "violated"
+    },
+    ProofStatusUpdate {
+        ns: String,
+        claim_id: String,
+        proof_id: String,
+        status: String, // "challenged" | "refuted" | "expired" | "proved"
+        challenge_id: Option<String>,
+    },
+    ProofSign {
+        ns: String,
+        claim_id: String,
+        proof_id: String,
+        signer: String,
+        token: String,
     },
 }
 
@@ -288,6 +316,10 @@ impl WalWriter {
             RecBody::ProofStore { .. } => RecType::ProofStore,
             RecBody::ClaimRetract { .. } => RecType::ClaimRetract,
             RecBody::ChallengeRecord { .. } => RecType::ChallengeRecord,
+            RecBody::DomainRegister { .. } => RecType::DomainRegister,
+            RecBody::ConsequenceUpdate { .. } => RecType::ConsequenceUpdate,
+            RecBody::ProofStatusUpdate { .. } => RecType::ProofStatusUpdate,
+            RecBody::ProofSign { .. } => RecType::ProofSign,
         }
     }
 }

@@ -68,6 +68,18 @@ impl PersistentStore {
                 RecBody::ClaimRetract { ns: _, claim_id: _ } => {
                     // Retraction is handled by proof status update in proof_store.
                 }
+                RecBody::DomainRegister { key, pack } => {
+                    mem.register_domain_pack_mem(key, pack);
+                }
+                RecBody::ConsequenceUpdate { ns, claim_id, idx, status } => {
+                    mem.update_consequence_status_mem(&ns, &claim_id, idx, &status);
+                }
+                RecBody::ProofStatusUpdate { ns, claim_id, proof_id, status, challenge_id } => {
+                    mem.update_proof_status_mem(&ns, &claim_id, &proof_id, &status, challenge_id);
+                }
+                RecBody::ProofSign { ns, claim_id, proof_id, signer, token } => {
+                    mem.sign_proof_mem(&ns, &claim_id, &signer, &token, &proof_id);
+                }
                 RecBody::ChallengeRecord {
                     ns: _,
                     claim_id,
@@ -425,6 +437,96 @@ impl Storage for PersistentStore {
 
     async fn get_proofs_for_ns(&self, ns: &str) -> Result<Vec<serde_json::Value>> {
         Ok(self.mem.get_proofs_for_ns_mem(ns))
+    }
+
+    async fn register_domain_pack(&self, key: String, pack: serde_json::Value) -> Result<String> {
+        self.mem.register_domain_pack_mem(key.clone(), pack.clone());
+        let wal = self.wal.lock().await;
+        wal.append(0, Utc::now().timestamp(), &RecBody::DomainRegister { key: key.clone(), pack })
+            .await
+            .map_err(|e| StateError::Internal(e.to_string()))?;
+        Ok(key)
+    }
+
+    async fn list_registered_domain_packs(&self) -> Result<Vec<serde_json::Value>> {
+        Ok(self.mem.list_registered_domain_packs_mem())
+    }
+
+    async fn update_proof_status(
+        &self,
+        ns: &str,
+        claim_id: &str,
+        proof_id: &str,
+        status: &str,
+        challenge_id: Option<String>,
+    ) -> Result<()> {
+        self.mem.update_proof_status_mem(ns, claim_id, proof_id, status, challenge_id.clone());
+        let wal = self.wal.lock().await;
+        wal.append(
+            0,
+            Utc::now().timestamp(),
+            &RecBody::ProofStatusUpdate {
+                ns: ns.to_string(),
+                claim_id: claim_id.to_string(),
+                proof_id: proof_id.to_string(),
+                status: status.to_string(),
+                challenge_id,
+            },
+        )
+        .await
+        .map_err(|e| StateError::Internal(e.to_string()))
+    }
+
+    async fn update_consequence_status(
+        &self,
+        ns: &str,
+        claim_id: &str,
+        idx: usize,
+        status: &str,
+    ) -> Result<()> {
+        self.mem.update_consequence_status_mem(ns, claim_id, idx, status);
+        let wal = self.wal.lock().await;
+        wal.append(
+            0,
+            Utc::now().timestamp(),
+            &RecBody::ConsequenceUpdate {
+                ns: ns.to_string(),
+                claim_id: claim_id.to_string(),
+                idx,
+                status: status.to_string(),
+            },
+        )
+        .await
+        .map_err(|e| StateError::Internal(e.to_string()))
+    }
+
+    async fn sign_proof(
+        &self,
+        ns: &str,
+        claim_id: &str,
+        proof_id: &str,
+        signer: &str,
+        token: &str,
+    ) -> Result<()> {
+        self.mem.sign_proof_mem(ns, claim_id, signer, token, proof_id);
+        let wal = self.wal.lock().await;
+        wal.append(
+            0,
+            Utc::now().timestamp(),
+            &RecBody::ProofSign {
+                ns: ns.to_string(),
+                claim_id: claim_id.to_string(),
+                proof_id: proof_id.to_string(),
+                signer: signer.to_string(),
+                token: token.to_string(),
+            },
+        )
+        .await
+        .map_err(|e| StateError::Internal(e.to_string()))
+    }
+
+    async fn get_proof_signatures(&self, ns: &str, claim_id: &str) -> Result<Vec<serde_json::Value>> {
+        Ok(self.mem.get_proof_signatures_mem(ns, claim_id))
     }
 
     async fn admin_trim_wal(&self, snapshot_id: &str) -> Result<Vec<String>> {
