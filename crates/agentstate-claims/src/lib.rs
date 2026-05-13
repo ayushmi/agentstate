@@ -3,6 +3,7 @@ pub mod checker;
 pub mod claim;
 pub mod domain;
 pub mod engine;
+pub mod lean_export;
 pub mod proof;
 pub mod testing;
 

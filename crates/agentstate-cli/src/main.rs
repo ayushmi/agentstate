@@ -92,6 +92,20 @@ enum ClaimCmd {
         /// Claim ID
         id: String,
     },
+    /// Download the Lean 4 proof certificate for a claim.
+    Lean {
+        /// Server base URL
+        #[arg(long, default_value = "http://localhost:8080")]
+        server: String,
+        /// Namespace
+        #[arg(long, short = 'n')]
+        ns: String,
+        /// Claim ID
+        id: String,
+        /// Write certificate to file (default: stdout)
+        #[arg(long, short = 'o')]
+        output: Option<String>,
+    },
 }
 
 #[derive(Subcommand)]
@@ -472,6 +486,23 @@ fn main() -> Result<()> {
                     .error_for_status()?
                     .json()?;
                 println!("{}", serde_json::to_string_pretty(&vc)?);
+            }
+            ClaimCmd::Lean { server, ns, id, output } => {
+                let cert = Client::new()
+                    .get(format!(
+                        "{}/admin/namespaces/{}/claims/{}/lean",
+                        server, ns, id
+                    ))
+                    .send()?
+                    .error_for_status()?
+                    .text()?;
+                match output {
+                    Some(path) => {
+                        std::fs::write(&path, &cert)?;
+                        eprintln!("Certificate written to {}", path);
+                    }
+                    None => print!("{}", cert),
+                }
             }
         },
         Cmd::Replay {

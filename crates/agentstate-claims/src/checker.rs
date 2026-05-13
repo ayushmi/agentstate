@@ -19,6 +19,34 @@ pub fn check_all(
         verifiable: check_verifiable(proof),
         sound: check_soundness(proof, domain),
         monotonic: check_monotonicity(claim),
+        // machine_verified is set later by the server after Lean invocation.
+        // The engine sets it false; it becomes true only when the Lean kernel
+        // successfully type-checks the generated proof certificate.
+        machine_verified: false,
+    }
+}
+
+/// Attempt to verify a Lean proof certificate using the installed Lean kernel.
+/// Returns true only if `lean` is found on PATH and exits 0 for the certificate.
+/// The certificate is written to a temp file; any error returns false silently.
+pub fn lean_verify(certificate: &str) -> bool {
+    use std::io::Write;
+    let dir = match tempfile::tempdir() {
+        Ok(d) => d,
+        Err(_) => return false,
+    };
+    let path = dir.path().join("certificate.lean");
+    if std::fs::write(&path, certificate).is_err() {
+        return false;
+    }
+    match std::process::Command::new("lean")
+        .arg(path.to_str().unwrap_or(""))
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::null())
+        .status()
+    {
+        Ok(status) => status.success(),
+        Err(_) => false, // lean not installed — silently skip
     }
 }
 

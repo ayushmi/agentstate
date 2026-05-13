@@ -1,5 +1,6 @@
 use agentstate_claims::{
-    build_proof, Challenge, ChallengeRequest, Claim, ClaimRequest, DomainPack, DomainRegistry,
+    build_proof, checker::lean_verify, lean_export::generate_certificate,
+    Challenge, ChallengeRequest, Claim, ClaimRequest, DomainPack, DomainRegistry,
 };
 use agentstate_core::{PutRequest, QueryRequest, StateError};
 use agentstate_storage::{InMemoryStore, PersistentStore, Storage};
@@ -184,6 +185,7 @@ async fn main() -> anyhow::Result<()> {
         .route("/admin/namespaces/:ns/claims/:id/challenge", post(claim_challenge))
         .route("/admin/namespaces/:ns/claims/:id/sign", post(claim_sign))
         .route("/admin/namespaces/:ns/claims/:id/vc", get(claim_vc))
+        .route("/admin/namespaces/:ns/claims/:id/lean", get(claim_lean))
         .route("/admin/domains", get(list_domains).post(register_domain))
         .route("/admin/domains/validate", post(validate_domain))
         .route("/metrics", get(metrics))
@@ -1086,7 +1088,22 @@ async fn claim_submit(
         .into_iter()
         .filter_map(|v| serde_json::from_value(v).ok())
         .collect::<Vec<_>>();
-    let proof = build_proof(&claim, &domain_pack, &existing_proofs);
+    let mut proof = build_proof(&claim, &domain_pack, &existing_proofs);
+
+    // Tier 1: always generate a Lean proof certificate if the domain has a lean_module.
+    // Tier 2: attempt machine verification if the `lean` binary is on PATH.
+    let certificate = generate_certificate(&proof, &claim, &domain_pack);
+    proof.lean_certificate = Some(certificate.clone());
+
+    if domain_pack.lean_module.is_some() {
+        // Attempt Lean kernel verification in a blocking thread to avoid blocking the async runtime.
+        let cert_for_verify = certificate.clone();
+        let machine_verified = tokio::task::spawn_blocking(move || lean_verify(&cert_for_verify))
+            .await
+            .unwrap_or(false);
+        proof.properties.machine_verified = machine_verified;
+    }
+
     let proof_json = serde_json::to_value(&proof).unwrap();
     if let Err(e) = app
         .store
@@ -1402,6 +1419,66 @@ async fn claim_vc(
         }
     });
     (StatusCode::OK, Json(vc)).into_response()
+}
+
+/// GET /admin/namespaces/:ns/claims/:id/lean
+///
+/// Returns the Lean 4 proof certificate for this claim as plain text.
+/// The certificate can be type-checked by the Lean kernel:
+///   lake env lean certificate.lean
+///
+/// The `machine_verified` field in the proof properties indicates whether the
+/// AgentState server already verified this certificate against the Lean kernel.
+async fn claim_lean(
+    State(app): State<AppState>,
+    Path((ns, id)): Path<(String, String)>,
+    headers: HeaderMap,
+) -> impl IntoResponse {
+    use axum::http::header;
+    if let Err(resp) = enforce_caps(&headers, &ns, "admin") {
+        return resp.into_response();
+    }
+    let proof = match app.store.get_proof_by_claim(&ns, &id).await {
+        Ok(Some(p)) => p,
+        Ok(None) => return (StatusCode::NOT_FOUND, Json(json!({"error": "proof not found"}))).into_response(),
+        Err(e) => return (StatusCode::INTERNAL_SERVER_ERROR, Json(json!({"error": e.to_string()}))).into_response(),
+    };
+
+    // Return cached certificate if already generated.
+    if let Some(cert) = proof.get("lean_certificate").and_then(|v| v.as_str()) {
+        return (
+            StatusCode::OK,
+            [(header::CONTENT_TYPE, "text/plain; charset=utf-8")],
+            cert.to_string(),
+        ).into_response();
+    }
+
+    // Certificate not cached — regenerate on-demand.
+    let claim = match app.store.get_claim(&ns, &id).await {
+        Ok(Some(c)) => c,
+        _ => return (StatusCode::NOT_FOUND, Json(json!({"error": "claim not found"}))).into_response(),
+    };
+    let domain_key = claim.get("domain").and_then(|v| v.as_str()).unwrap_or("");
+    let domain_pack = match app.domains.read().get(domain_key).cloned() {
+        Some(d) => d,
+        None => return (StatusCode::BAD_REQUEST, Json(json!({"error": "domain not found"}))).into_response(),
+    };
+
+    let proof_typed: agentstate_claims::Proof = match serde_json::from_value(proof) {
+        Ok(p) => p,
+        Err(e) => return (StatusCode::INTERNAL_SERVER_ERROR, Json(json!({"error": e.to_string()}))).into_response(),
+    };
+    let claim_typed: agentstate_claims::Claim = match serde_json::from_value(claim) {
+        Ok(c) => c,
+        Err(e) => return (StatusCode::INTERNAL_SERVER_ERROR, Json(json!({"error": e.to_string()}))).into_response(),
+    };
+
+    let cert = generate_certificate(&proof_typed, &claim_typed, &domain_pack);
+    (
+        StatusCode::OK,
+        [(header::CONTENT_TYPE, "text/plain; charset=utf-8")],
+        cert,
+    ).into_response()
 }
 
 pub mod agentstate_v1 {

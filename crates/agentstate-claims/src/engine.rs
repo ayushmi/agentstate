@@ -172,6 +172,7 @@ pub fn build_proof(claim: &Claim, domain: &DomainPack, existing_proofs: &[Proof]
             verifiable: false,
             sound: false,
             monotonic: false,
+            machine_verified: false,
         },
         conclusion,
         confidence,
@@ -186,6 +187,7 @@ pub fn build_proof(claim: &Claim, domain: &DomainPack, existing_proofs: &[Proof]
         commit_seq: 0,
         valid_until: claim.valid_until,
         required_signers: claim.required_signers.clone(),
+        lean_certificate: None,
     };
 
     proof.properties = checker::check_all(&proof, claim, existing_proofs, domain);

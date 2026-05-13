@@ -56,6 +56,11 @@ pub struct DomainPack {
     pub claim_templates: Vec<ClaimTemplate>,
     #[serde(default)]
     pub consistency_constraints: Vec<ConsistencyConstraint>,
+    /// Lean 4 module name for this domain, e.g. "AgentState.Domain.Healthcare.V1".
+    /// When set, the server generates Lean proof certificates and can optionally
+    /// invoke the Lean kernel to set machine_verified=true on submitted proofs.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub lean_module: Option<String>,
 }
 
 /// In-process registry of loaded domain packs.

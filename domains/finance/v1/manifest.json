@@ -23,22 +23,36 @@
   "inference_rules": [
     {
       "id": "solvency_from_balance_sheet",
-      "premises": ["audited_balance_sheet", "fair_value_adjustments"],
+      "premises": [
+        "audited_balance_sheet",
+        "fair_value_adjustments"
+      ],
       "conclusion": "entity_solvent"
     },
     {
       "id": "capital_adequacy_from_ratios",
-      "premises": ["cet1_ratio", "tier1_ratio", "total_capital_ratio"],
+      "premises": [
+        "cet1_ratio",
+        "tier1_ratio",
+        "total_capital_ratio"
+      ],
       "conclusion": "capital_adequate"
     },
     {
       "id": "aml_clearance_from_screening",
-      "premises": ["sanctions_screen_result", "transaction_pattern_analysis"],
+      "premises": [
+        "sanctions_screen_result",
+        "transaction_pattern_analysis"
+      ],
       "conclusion": "aml_cleared"
     },
     {
       "id": "collateral_adequacy_from_valuation",
-      "premises": ["collateral_valuation", "exposure_amount", "haircut_schedule"],
+      "premises": [
+        "collateral_valuation",
+        "exposure_amount",
+        "haircut_schedule"
+      ],
       "conclusion": "collateral_adequate"
     }
   ],
@@ -46,34 +60,67 @@
     {
       "id": "solvency_claim",
       "description": "Assert that an entity is solvent as of a specific measurement date.",
-      "required_premises": ["audited_balance_sheet", "fair_value_adjustments"],
-      "optional_premises": ["going_concern_opinion", "contingent_liabilities"],
+      "required_premises": [
+        "audited_balance_sheet",
+        "fair_value_adjustments"
+      ],
+      "optional_premises": [
+        "going_concern_opinion",
+        "contingent_liabilities"
+      ],
       "conclusion_predicate": "entity_solvent",
-      "inference_chain": ["solvency_from_balance_sheet"]
+      "inference_chain": [
+        "solvency_from_balance_sheet"
+      ]
     },
     {
       "id": "capital_adequacy_claim",
       "description": "Assert that a bank meets Basel III capital adequacy requirements.",
-      "required_premises": ["cet1_ratio", "tier1_ratio", "total_capital_ratio"],
-      "optional_premises": ["leverage_ratio", "liquidity_coverage"],
+      "required_premises": [
+        "cet1_ratio",
+        "tier1_ratio",
+        "total_capital_ratio"
+      ],
+      "optional_premises": [
+        "leverage_ratio",
+        "liquidity_coverage"
+      ],
       "conclusion_predicate": "capital_adequate",
-      "inference_chain": ["capital_adequacy_from_ratios"]
+      "inference_chain": [
+        "capital_adequacy_from_ratios"
+      ]
     },
     {
       "id": "aml_clearance_claim",
       "description": "Assert that a transaction is cleared from AML/CFT perspective.",
-      "required_premises": ["sanctions_screen_result", "transaction_pattern_analysis"],
-      "optional_premises": ["beneficial_owner_verification", "source_of_funds"],
+      "required_premises": [
+        "sanctions_screen_result",
+        "transaction_pattern_analysis"
+      ],
+      "optional_premises": [
+        "beneficial_owner_verification",
+        "source_of_funds"
+      ],
       "conclusion_predicate": "aml_cleared",
-      "inference_chain": ["aml_clearance_from_screening"]
+      "inference_chain": [
+        "aml_clearance_from_screening"
+      ]
     },
     {
       "id": "collateral_adequacy_claim",
       "description": "Assert that posted collateral adequately covers the exposure.",
-      "required_premises": ["collateral_valuation", "exposure_amount", "haircut_schedule"],
-      "optional_premises": ["concentration_limits"],
+      "required_premises": [
+        "collateral_valuation",
+        "exposure_amount",
+        "haircut_schedule"
+      ],
+      "optional_premises": [
+        "concentration_limits"
+      ],
       "conclusion_predicate": "collateral_adequate",
-      "inference_chain": ["collateral_adequacy_from_valuation"]
+      "inference_chain": [
+        "collateral_adequacy_from_valuation"
+      ]
     }
   ],
   "consistency_constraints": [
@@ -87,5 +134,6 @@
       "description": "Cannot simultaneously hold AML cleared and AML flagged for the same transaction.",
       "contradicts_predicate": "aml_flagged"
     }
-  ]
+  ],
+  "lean_module": "AgentState.Domain.Finance.V1"
 }

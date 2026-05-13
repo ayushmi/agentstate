@@ -1,0 +1,11 @@
+[package]
+name = "AgentState"
+version = "1.3.0"
+defaultTargets = ["AgentState"]
+
+[[lean_lib]]
+name = "AgentState"
+
+# To install Lean 4 and Lake:
+#   curl https://raw.githubusercontent.com/leanprover/elan/master/elan-init.sh -sSf | sh
+#   lake build

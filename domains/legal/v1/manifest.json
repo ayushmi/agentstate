@@ -23,22 +23,38 @@
   "inference_rules": [
     {
       "id": "contract_validity_inference",
-      "premises": ["offer_evidence", "acceptance_evidence", "consideration_evidence", "capacity_evidence", "legality_evidence"],
+      "premises": [
+        "offer_evidence",
+        "acceptance_evidence",
+        "consideration_evidence",
+        "capacity_evidence",
+        "legality_evidence"
+      ],
       "conclusion": "contract_valid"
     },
     {
       "id": "jurisdiction_determination",
-      "premises": ["governing_law_clause", "forum_mandatory_law"],
+      "premises": [
+        "governing_law_clause",
+        "forum_mandatory_law"
+      ],
       "conclusion": "jurisdiction_determined"
     },
     {
       "id": "limitation_clearance",
-      "premises": ["accrual_date", "limitation_period", "tolling_events"],
+      "premises": [
+        "accrual_date",
+        "limitation_period",
+        "tolling_events"
+      ],
       "conclusion": "claim_within_limitation"
     },
     {
       "id": "regulatory_compliance_inference",
-      "premises": ["compliance_checklist", "regulatory_instrument"],
+      "premises": [
+        "compliance_checklist",
+        "regulatory_instrument"
+      ],
       "conclusion": "regulatory_compliant"
     }
   ],
@@ -46,34 +62,68 @@
     {
       "id": "contract_validity",
       "description": "Assert that a contract is legally valid and enforceable.",
-      "required_premises": ["offer_evidence", "acceptance_evidence", "consideration_evidence", "capacity_evidence", "legality_evidence"],
-      "optional_premises": ["execution_evidence", "notarisation"],
+      "required_premises": [
+        "offer_evidence",
+        "acceptance_evidence",
+        "consideration_evidence",
+        "capacity_evidence",
+        "legality_evidence"
+      ],
+      "optional_premises": [
+        "execution_evidence",
+        "notarisation"
+      ],
       "conclusion_predicate": "contract_valid",
-      "inference_chain": ["contract_validity_inference"]
+      "inference_chain": [
+        "contract_validity_inference"
+      ]
     },
     {
       "id": "jurisdiction_claim",
       "description": "Assert the governing jurisdiction for a legal instrument.",
-      "required_premises": ["governing_law_clause", "forum_mandatory_law"],
-      "optional_premises": ["choice_of_law_analysis"],
+      "required_premises": [
+        "governing_law_clause",
+        "forum_mandatory_law"
+      ],
+      "optional_premises": [
+        "choice_of_law_analysis"
+      ],
       "conclusion_predicate": "jurisdiction_determined",
-      "inference_chain": ["jurisdiction_determination"]
+      "inference_chain": [
+        "jurisdiction_determination"
+      ]
     },
     {
       "id": "limitation_claim",
       "description": "Assert that a claim is within the applicable limitation period.",
-      "required_premises": ["accrual_date", "limitation_period", "tolling_events"],
-      "optional_premises": ["equitable_tolling_analysis"],
+      "required_premises": [
+        "accrual_date",
+        "limitation_period",
+        "tolling_events"
+      ],
+      "optional_premises": [
+        "equitable_tolling_analysis"
+      ],
       "conclusion_predicate": "claim_within_limitation",
-      "inference_chain": ["limitation_clearance"]
+      "inference_chain": [
+        "limitation_clearance"
+      ]
     },
     {
       "id": "regulatory_compliance_claim",
       "description": "Assert that an entity is compliant with a specific regulation.",
-      "required_premises": ["compliance_checklist", "regulatory_instrument"],
-      "optional_premises": ["audit_trail", "remediation_evidence"],
+      "required_premises": [
+        "compliance_checklist",
+        "regulatory_instrument"
+      ],
+      "optional_premises": [
+        "audit_trail",
+        "remediation_evidence"
+      ],
       "conclusion_predicate": "regulatory_compliant",
-      "inference_chain": ["regulatory_compliance_inference"]
+      "inference_chain": [
+        "regulatory_compliance_inference"
+      ]
     }
   ],
   "consistency_constraints": [
@@ -87,5 +137,6 @@
       "description": "Cannot simultaneously hold regulatory_compliant and regulatory_non_compliant for the same entity+regulation.",
       "contradicts_predicate": "regulatory_non_compliant"
     }
-  ]
+  ],
+  "lean_module": "AgentState.Domain.Legal.V1"
 }

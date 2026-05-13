@@ -11,7 +11,7 @@ pub enum ProofStatus {
     Challenged,
 }
 
-/// The six formal properties every proof must satisfy.
+/// The six formal properties every proof must satisfy, plus Lean machine verification.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ProofProperties {
     /// No claim C and ¬C are both derivable from this claim set.
@@ -26,6 +26,9 @@ pub struct ProofProperties {
     pub sound: bool,
     /// All WAL state premises are pinned to a specific commit (not floating).
     pub monotonic: bool,
+    /// The proof certificate was accepted by the Lean 4 kernel (Tier 2+).
+    /// False when Lean is unavailable or the domain has no formal.lean companion.
+    pub machine_verified: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -99,4 +102,8 @@ pub struct Proof {
     /// Signers required before status advances from Proving to Proved.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub required_signers: Vec<String>,
+    /// Lean 4 proof certificate — a `.lean` file that the Lean kernel can verify.
+    /// Present when the domain has a formal.lean companion (Tier 2+).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub lean_certificate: Option<String>,
 }

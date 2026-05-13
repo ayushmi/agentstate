@@ -23,22 +23,35 @@
   "inference_rules": [
     {
       "id": "allergy_clearance",
-      "premises": ["allergy_history", "drug_class_membership"],
+      "premises": [
+        "allergy_history",
+        "drug_class_membership"
+      ],
       "conclusion": "not_allergically_contraindicated"
     },
     {
       "id": "interaction_clearance",
-      "premises": ["current_medications", "interaction_database"],
+      "premises": [
+        "current_medications",
+        "interaction_database"
+      ],
       "conclusion": "no_adverse_interaction"
     },
     {
       "id": "prescribing_safety",
-      "premises": ["not_allergically_contraindicated", "no_adverse_interaction", "dosage_evidence"],
+      "premises": [
+        "not_allergically_contraindicated",
+        "no_adverse_interaction",
+        "dosage_evidence"
+      ],
       "conclusion": "safe_to_prescribe"
     },
     {
       "id": "diagnostic_inference",
-      "premises": ["symptom_evidence", "test_result"],
+      "premises": [
+        "symptom_evidence",
+        "test_result"
+      ],
       "conclusion": "diagnosis_supported"
     }
   ],
@@ -46,31 +59,58 @@
     {
       "id": "drug_safety",
       "description": "Assert that a specific drug is safe to prescribe for a specific patient given available evidence.",
-      "required_premises": ["allergy_history", "current_medications", "dosage_evidence"],
-      "optional_premises": ["prior_exposure", "renal_function", "hepatic_function"],
+      "required_premises": [
+        "allergy_history",
+        "current_medications",
+        "dosage_evidence"
+      ],
+      "optional_premises": [
+        "prior_exposure",
+        "renal_function",
+        "hepatic_function"
+      ],
       "conclusion_predicate": "safe_to_prescribe",
-      "inference_chain": ["allergy_clearance", "interaction_clearance", "prescribing_safety"]
+      "inference_chain": [
+        "allergy_clearance",
+        "interaction_clearance",
+        "prescribing_safety"
+      ]
     },
     {
       "id": "contraindication",
       "description": "Assert that a drug is contraindicated for a patient.",
-      "required_premises": ["contraindication_evidence"],
-      "optional_premises": ["allergy_history"],
+      "required_premises": [
+        "contraindication_evidence"
+      ],
+      "optional_premises": [
+        "allergy_history"
+      ],
       "conclusion_predicate": "not_safe_to_prescribe",
       "inference_chain": []
     },
     {
       "id": "diagnosis",
       "description": "Assert a clinical diagnosis based on symptoms and test results.",
-      "required_premises": ["symptom_evidence", "test_result"],
-      "optional_premises": ["imaging_result", "specialist_note"],
+      "required_premises": [
+        "symptom_evidence",
+        "test_result"
+      ],
+      "optional_premises": [
+        "imaging_result",
+        "specialist_note"
+      ],
       "conclusion_predicate": "diagnosis_supported",
-      "inference_chain": ["diagnostic_inference"]
+      "inference_chain": [
+        "diagnostic_inference"
+      ]
     },
     {
       "id": "lab_normal",
       "description": "Assert that a lab result is within normal range for the patient.",
-      "required_premises": ["lab_result", "reference_range"],
+      "required_premises": [
+        "lab_result",
+        "reference_range"
+      ],
       "optional_premises": [],
       "conclusion_predicate": "lab_value_normal",
       "inference_chain": []
@@ -87,5 +127,6 @@
       "description": "Cannot simultaneously hold a contraindication and a safety clearance.",
       "contradicts_predicate": "safe_to_prescribe"
     }
-  ]
+  ],
+  "lean_module": "AgentState.Domain.Healthcare.V1"
 }
