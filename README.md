@@ -1,3 +1,5 @@
+
+
 # AgentState v1.2.0
 **Persistent, formally verifiable state management for AI agents**
 
@@ -56,6 +58,9 @@ agents = client.query_agents(tags={"team": "support"})
 ```
 
 ```bash
+# Python
+pip install agentstate
+
 # TypeScript
 npm install agentstate
 
